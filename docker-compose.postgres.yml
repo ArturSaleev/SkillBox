@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: skillbox
+      POSTGRES_USER: skillbox
+      POSTGRES_PASSWORD: password
+    volumes:
+      - skillbox-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skillbox -d skillbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  skillbox:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SKILLBOX_DATABASE_DRIVER: postgres
+      SKILLBOX_DATABASE_DSN: "postgres://skillbox:password@postgres:5432/skillbox?sslmode=disable"
+      SKILLBOX_SEED_DEMO: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  skillbox-postgres:

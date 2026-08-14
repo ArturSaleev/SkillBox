@@ -1,0 +1,40 @@
+# Every value can be overridden with SKILLBOX_* environment variables.
+server:
+  address: ":8080"
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+database:
+  driver: sqlite # sqlite, mysql, postgres
+  path: ./data/skillbox.db
+  dsn: ""
+  migrate: true
+
+auth:
+  mode: disabled # disabled, api_key
+  api_keys: []
+
+# Built-in student, teacher, and reviewer profiles are persisted automatically.
+# Add custom profiles here or through POST /api/v1/mcp-profiles.
+mcp_profiles:
+  - slug: auditor
+    name: Auditor
+    description: Read-only execution auditor
+    enabled: true
+    permissions:
+      - skill.read
+      - skill.search
+      - execution.read
+      - statistics.read
+    tools:
+      - search_skills
+      - get_skill
+      - list_recent_executions
+      - get_skill_statistics
+
+observability:
+  level: info
+  format: json
+
+seed_demo: false

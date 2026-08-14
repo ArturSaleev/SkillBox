@@ -1,0 +1,22 @@
+server:
+  address: ":8080"
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+database:
+  driver: sqlite
+  path: ./data/skillbox.db
+  migrate: true
+
+auth:
+  mode: disabled
+  api_keys: []
+
+mcp_profiles: []
+
+observability:
+  level: info
+  format: json
+
+seed_demo: true
