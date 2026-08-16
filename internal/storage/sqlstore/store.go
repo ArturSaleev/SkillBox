@@ -59,6 +59,33 @@ func (s *Store) CreateWorkspace(ctx context.Context, w *domain.Workspace) error 
 	return err
 }
 
+func (s *Store) GetWorkspace(ctx context.Context, idOrSlug string) (*domain.Workspace, error) {
+	var w domain.Workspace
+	var created, updated string
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT id,slug,name,description,created_at,updated_at FROM workspaces WHERE id=? OR slug=?`), idOrSlug, idOrSlug).Scan(&w.ID, &w.Slug, &w.Name, &w.Description, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ports.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	w.CreatedAt, w.UpdatedAt = parseTime(created), parseTime(updated)
+	return &w, nil
+}
+
+func (s *Store) EnsureWorkspace(ctx context.Context, slug, name string) (*domain.Workspace, error) {
+	w := domain.Workspace{ID: uuid.NewString(), Slug: slug, Name: name, CreatedAt: now()}
+	w.UpdatedAt = w.CreatedAt
+	query := `INSERT INTO workspaces(id,slug,name,description,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(slug) DO NOTHING`
+	if s.dialect == "mysql" {
+		query = `INSERT IGNORE INTO workspaces(id,slug,name,description,created_at,updated_at) VALUES(?,?,?,?,?,?)`
+	}
+	if _, err := s.db.ExecContext(ctx, s.q(query), w.ID, w.Slug, w.Name, w.Description, ts(w.CreatedAt), ts(w.UpdatedAt)); err != nil {
+		return nil, err
+	}
+	return s.GetWorkspace(ctx, slug)
+}
+
 func (s *Store) ListWorkspaces(ctx context.Context) ([]domain.Workspace, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,slug,name,description,created_at,updated_at FROM workspaces ORDER BY name`)
 	if err != nil {
@@ -86,31 +113,79 @@ func (s *Store) CreateProject(ctx context.Context, p *domain.Project) error {
 		p.CreatedAt = now()
 	}
 	p.UpdatedAt = p.CreatedAt
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO projects(id,workspace_id,slug,name,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`), p.ID, p.WorkspaceID, p.Slug, p.Name, p.Description, ts(p.CreatedAt), ts(p.UpdatedAt))
+	if p.ExternalID == "" {
+		p.ExternalID = p.Slug
+	}
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO projects(id,workspace_id,external_id,slug,name,description,auto_created,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`), p.ID, p.WorkspaceID, p.ExternalID, p.Slug, p.Name, p.Description, p.AutoCreated, ts(p.CreatedAt), ts(p.UpdatedAt))
 	return err
 }
 
-func (s *Store) ListProjects(ctx context.Context, workspaceID *string) ([]domain.Project, error) {
-	query := `SELECT id,workspace_id,slug,name,description,created_at,updated_at FROM projects`
-	var args []any
+func (s *Store) GetProject(ctx context.Context, idOrSlug string, workspaceID *string) (*domain.Project, error) {
+	query := `SELECT p.id,p.workspace_id,p.external_id,p.slug,p.name,p.description,p.auto_created,p.created_at,p.updated_at,w.id,w.slug,w.name,w.description,w.created_at,w.updated_at FROM projects p JOIN workspaces w ON w.id=p.workspace_id WHERE (p.id=? OR p.slug=? OR p.external_id=?)`
+	args := []any{idOrSlug, idOrSlug, idOrSlug}
 	if workspaceID != nil {
-		query += ` WHERE workspace_id=?`
+		query += ` AND p.workspace_id=?`
 		args = append(args, *workspaceID)
 	}
-	query += ` ORDER BY name`
+	query += ` ORDER BY CASE WHEN p.id=? THEN 0 ELSE 1 END LIMIT 1`
+	args = append(args, idOrSlug)
+	var p domain.Project
+	var workspace domain.Workspace
+	var externalID sql.NullString
+	var c, u, wc, wu string
+	err := s.db.QueryRowContext(ctx, s.q(query), args...).Scan(&p.ID, &p.WorkspaceID, &externalID, &p.Slug, &p.Name, &p.Description, &p.AutoCreated, &c, &u, &workspace.ID, &workspace.Slug, &workspace.Name, &workspace.Description, &wc, &wu)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ports.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.CreatedAt, p.UpdatedAt = parseTime(c), parseTime(u)
+	p.ExternalID = externalID.String
+	workspace.CreatedAt, workspace.UpdatedAt = parseTime(wc), parseTime(wu)
+	p.Workspace = &workspace
+	return &p, nil
+}
+
+func (s *Store) EnsureProject(ctx context.Context, workspaceID, externalID, name string) (*domain.Project, error) {
+	p := domain.Project{ID: uuid.NewString(), WorkspaceID: workspaceID, ExternalID: externalID, Slug: externalID, Name: name, AutoCreated: true, CreatedAt: now()}
+	p.UpdatedAt = p.CreatedAt
+	query := `INSERT INTO projects(id,workspace_id,external_id,slug,name,description,auto_created,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,slug) DO NOTHING`
+	if s.dialect == "mysql" {
+		query = `INSERT IGNORE INTO projects(id,workspace_id,external_id,slug,name,description,auto_created,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`
+	}
+	if _, err := s.db.ExecContext(ctx, s.q(query), p.ID, p.WorkspaceID, p.ExternalID, p.Slug, p.Name, p.Description, p.AutoCreated, ts(p.CreatedAt), ts(p.UpdatedAt)); err != nil {
+		return nil, err
+	}
+	return s.GetProject(ctx, externalID, &workspaceID)
+}
+
+func (s *Store) ListProjects(ctx context.Context, workspaceID *string) ([]domain.Project, error) {
+	query := `SELECT p.id,p.workspace_id,p.external_id,p.slug,p.name,p.description,p.auto_created,p.created_at,p.updated_at,w.id,w.slug,w.name,w.description,w.created_at,w.updated_at FROM projects p JOIN workspaces w ON w.id=p.workspace_id`
+	var args []any
+	if workspaceID != nil {
+		query += ` WHERE p.workspace_id=?`
+		args = append(args, *workspaceID)
+	}
+	query += ` ORDER BY p.name`
 	rows, err := s.db.QueryContext(ctx, s.q(query), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.Project
+	out := make([]domain.Project, 0)
 	for rows.Next() {
 		var p domain.Project
-		var c, u string
-		if err := rows.Scan(&p.ID, &p.WorkspaceID, &p.Slug, &p.Name, &p.Description, &c, &u); err != nil {
+		var workspace domain.Workspace
+		var externalID sql.NullString
+		var c, u, wc, wu string
+		if err := rows.Scan(&p.ID, &p.WorkspaceID, &externalID, &p.Slug, &p.Name, &p.Description, &p.AutoCreated, &c, &u, &workspace.ID, &workspace.Slug, &workspace.Name, &workspace.Description, &wc, &wu); err != nil {
 			return nil, err
 		}
 		p.CreatedAt, p.UpdatedAt = parseTime(c), parseTime(u)
+		p.ExternalID = externalID.String
+		workspace.CreatedAt, workspace.UpdatedAt = parseTime(wc), parseTime(wu)
+		p.Workspace = &workspace
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -180,10 +255,10 @@ func (s *Store) UpdateSkill(ctx context.Context, skill *domain.Skill, summary st
 
 func (s *Store) writeSkill(ctx context.Context, tx *sql.Tx, sk *domain.Skill, update bool) error {
 	criteria, _ := json.Marshal(sk.SuccessCriteria)
-	args := []any{sk.WorkspaceID, sk.ProjectID, sk.OwnerUserID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.UpdatedAt)}
+	args := []any{sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.UpdatedAt)}
 	if update {
 		args = append(args, sk.ID)
-		res, err := tx.ExecContext(ctx, s.q(`UPDATE skills SET workspace_id=?,project_id=?,owner_user_id=?,slug=?,name=?,description=?,purpose=?,when_to_use=?,when_not_to_use=?,instructions=?,success_criteria=?,scope=?,status=?,priority=?,current_version=?,updated_at=? WHERE id=?`), args...)
+		res, err := tx.ExecContext(ctx, s.q(`UPDATE skills SET workspace_id=?,project_id=?,slug=?,name=?,description=?,purpose=?,when_to_use=?,when_not_to_use=?,instructions=?,success_criteria=?,scope=?,status=?,priority=?,current_version=?,updated_at=? WHERE id=?`), args...)
 		if err != nil {
 			return err
 		}
@@ -193,8 +268,8 @@ func (s *Store) writeSkill(ctx context.Context, tx *sql.Tx, sk *domain.Skill, up
 		}
 		return nil
 	}
-	args = []any{sk.ID, sk.WorkspaceID, sk.ProjectID, sk.OwnerUserID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.CreatedAt), ts(sk.UpdatedAt)}
-	_, err := tx.ExecContext(ctx, s.q(`INSERT INTO skills(id,workspace_id,project_id,owner_user_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), args...)
+	args = []any{sk.ID, sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.CreatedAt), ts(sk.UpdatedAt)}
+	_, err := tx.ExecContext(ctx, s.q(`INSERT INTO skills(id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), args...)
 	return err
 }
 
@@ -294,7 +369,7 @@ func (s *Store) snapshot(ctx context.Context, tx *sql.Tx, sk *domain.Skill, summ
 }
 
 func (s *Store) GetSkill(ctx context.Context, id string) (*domain.Skill, error) {
-	row := s.db.QueryRowContext(ctx, s.q(`SELECT id,workspace_id,project_id,owner_user_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills WHERE id=?`), id)
+	row := s.db.QueryRowContext(ctx, s.q(`SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills WHERE id=?`), id)
 	sk, err := scanSkill(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -312,9 +387,9 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanSkill(row rowScanner) (*domain.Skill, error) {
 	var sk domain.Skill
-	var ws, pr, owner sql.NullString
+	var ws, pr sql.NullString
 	var criteria, created, updated string
-	err := row.Scan(&sk.ID, &ws, &pr, &owner, &sk.Slug, &sk.Name, &sk.Description, &sk.Purpose, &sk.WhenToUse, &sk.WhenNotToUse, &sk.Instructions, &criteria, &sk.Scope, &sk.Status, &sk.Priority, &sk.CurrentVersion, &created, &updated)
+	err := row.Scan(&sk.ID, &ws, &pr, &sk.Slug, &sk.Name, &sk.Description, &sk.Purpose, &sk.WhenToUse, &sk.WhenNotToUse, &sk.Instructions, &criteria, &sk.Scope, &sk.Status, &sk.Priority, &sk.CurrentVersion, &created, &updated)
 	if err != nil {
 		return nil, err
 	}
@@ -324,16 +399,13 @@ func scanSkill(row rowScanner) (*domain.Skill, error) {
 	if pr.Valid {
 		sk.ProjectID = &pr.String
 	}
-	if owner.Valid {
-		sk.OwnerUserID = &owner.String
-	}
 	_ = json.Unmarshal([]byte(criteria), &sk.SuccessCriteria)
 	sk.CreatedAt, sk.UpdatedAt = parseTime(created), parseTime(updated)
 	return &sk, nil
 }
 
 func (s *Store) ListSkills(ctx context.Context) ([]domain.Skill, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,workspace_id,project_id,owner_user_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills`)
 	if err != nil {
 		return nil, err
 	}

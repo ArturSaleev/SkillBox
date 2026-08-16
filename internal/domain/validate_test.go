@@ -18,8 +18,4 @@ func TestSkillValidationEnforcesScopeAndPortableEnums(t *testing.T) {
 	if err := sk.Validate(); err == nil {
 		t.Fatal("expected invalid scope error")
 	}
-	sk.Scope = ScopeUser
-	if err := sk.Validate(); err == nil {
-		t.Fatal("expected user owner error")
-	}
 }

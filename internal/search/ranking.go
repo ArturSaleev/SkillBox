@@ -80,10 +80,6 @@ func Eligible(skill domain.Skill, f domain.SearchFilter) bool {
 		if f.WorkspaceID == nil || skill.WorkspaceID == nil || *f.WorkspaceID != *skill.WorkspaceID {
 			return false
 		}
-	case domain.ScopeUser:
-		if f.OwnerUserID == nil || skill.OwnerUserID == nil || *f.OwnerUserID != *skill.OwnerUserID {
-			return false
-		}
 	}
 	if len(f.Domains) > 0 && matches(skill.Domains, f.Domains) == 0 {
 		return false

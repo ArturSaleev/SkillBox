@@ -1,22 +1,7 @@
 server:
-  address: ":8080"
-  read_timeout: 15s
-  write_timeout: 30s
-  shutdown_timeout: 10s
+  address: ":8081"
 
 database:
-  driver: sqlite
+  driver: sqlite # sqlite, mysql, postgres
   path: ./data/skillbox.db
-  migrate: true
-
-auth:
-  mode: disabled
-  api_keys: []
-
-mcp_profiles: []
-
-observability:
-  level: info
-  format: json
-
-seed_demo: true
+  dsn: ""

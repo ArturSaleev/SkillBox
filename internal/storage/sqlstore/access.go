@@ -3,7 +3,6 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -11,89 +10,6 @@ import (
 	"github.com/aibox/skillbox/internal/ports"
 	"github.com/google/uuid"
 )
-
-func (s *Store) UpsertMCPProfile(ctx context.Context, profile *domain.MCPProfile) error {
-	if profile.ID == "" {
-		profile.ID = uuid.NewString()
-	}
-	if profile.CreatedAt.IsZero() {
-		profile.CreatedAt = now()
-	}
-	profile.UpdatedAt = now()
-	permissions, _ := json.Marshal(profile.Permissions)
-	tools, _ := json.Marshal(profile.Tools)
-	existing, err := s.GetMCPProfileBySlug(ctx, profile.Slug)
-	if err == nil {
-		profile.ID, profile.CreatedAt = existing.ID, existing.CreatedAt
-		_, err = s.db.ExecContext(ctx, s.q(`UPDATE mcp_profiles SET name=?,description=?,permissions=?,tools=?,built_in=?,enabled=?,updated_at=? WHERE id=?`), profile.Name, profile.Description, string(permissions), string(tools), profile.BuiltIn, profile.Enabled, ts(profile.UpdatedAt), profile.ID)
-		return err
-	}
-	if !errors.Is(err, ports.ErrNotFound) {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO mcp_profiles(id,slug,name,description,permissions,tools,built_in,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`), profile.ID, profile.Slug, profile.Name, profile.Description, string(permissions), string(tools), profile.BuiltIn, profile.Enabled, ts(profile.CreatedAt), ts(profile.UpdatedAt))
-	return err
-}
-
-func scanProfile(row rowScanner) (*domain.MCPProfile, error) {
-	var p domain.MCPProfile
-	var permissions, tools, created, updated string
-	if err := row.Scan(&p.ID, &p.Slug, &p.Name, &p.Description, &permissions, &tools, &p.BuiltIn, &p.Enabled, &created, &updated); err != nil {
-		return nil, err
-	}
-	_ = json.Unmarshal([]byte(permissions), &p.Permissions)
-	_ = json.Unmarshal([]byte(tools), &p.Tools)
-	p.CreatedAt, p.UpdatedAt = parseTime(created), parseTime(updated)
-	return &p, nil
-}
-func (s *Store) GetMCPProfile(ctx context.Context, id string) (*domain.MCPProfile, error) {
-	p, err := scanProfile(s.db.QueryRowContext(ctx, s.q(`SELECT id,slug,name,description,permissions,tools,built_in,enabled,created_at,updated_at FROM mcp_profiles WHERE id=?`), id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ports.ErrNotFound
-	}
-	return p, err
-}
-func (s *Store) GetMCPProfileBySlug(ctx context.Context, slug string) (*domain.MCPProfile, error) {
-	p, err := scanProfile(s.db.QueryRowContext(ctx, s.q(`SELECT id,slug,name,description,permissions,tools,built_in,enabled,created_at,updated_at FROM mcp_profiles WHERE slug=?`), slug))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ports.ErrNotFound
-	}
-	return p, err
-}
-func (s *Store) ListMCPProfiles(ctx context.Context) ([]domain.MCPProfile, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,slug,name,description,permissions,tools,built_in,enabled,created_at,updated_at FROM mcp_profiles ORDER BY slug`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.MCPProfile
-	for rows.Next() {
-		p, err := scanProfile(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *p)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) CreateMCPConnection(ctx context.Context, c *domain.MCPConnection) error {
-	if c.AuthType == "" {
-		c.AuthType = "api_key"
-	}
-	if err := c.Validate(); err != nil {
-		return err
-	}
-	if c.ID == "" {
-		c.ID = uuid.NewString()
-	}
-	if c.CreatedAt.IsZero() {
-		c.CreatedAt = now()
-	}
-	c.UpdatedAt = c.CreatedAt
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO mcp_connections(id,slug,name,workspace_id,project_id,profile_id,auth_type,credential_hash,enabled,created_at,updated_at,last_used_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`), c.ID, c.Slug, c.Name, c.WorkspaceID, c.ProjectID, c.ProfileID, c.AuthType, c.CredentialHash, c.Enabled, ts(c.CreatedAt), ts(c.UpdatedAt), nil)
-	return err
-}
 
 func (s *Store) MarkSkillProposalPublished(ctx context.Context, id string) error {
 	stamp := now()
@@ -107,60 +23,6 @@ func (s *Store) MarkSkillProposalPublished(ctx context.Context, id string) error
 	}
 	return nil
 }
-func scanConnection(row rowScanner) (*domain.MCPConnection, error) {
-	var c domain.MCPConnection
-	var ws, pr, last sql.NullString
-	var created, updated string
-	if err := row.Scan(&c.ID, &c.Slug, &c.Name, &ws, &pr, &c.ProfileID, &c.AuthType, &c.CredentialHash, &c.Enabled, &created, &updated, &last); err != nil {
-		return nil, err
-	}
-	c.WorkspaceID = strPtr(ws)
-	c.ProjectID = strPtr(pr)
-	c.CreatedAt, c.UpdatedAt = parseTime(created), parseTime(updated)
-	if last.Valid {
-		v := parseTime(last.String)
-		c.LastUsedAt = &v
-	}
-	return &c, nil
-}
-func connectionSelect() string {
-	return `SELECT id,slug,name,workspace_id,project_id,profile_id,auth_type,credential_hash,enabled,created_at,updated_at,last_used_at FROM mcp_connections`
-}
-func (s *Store) GetMCPConnection(ctx context.Context, id string) (*domain.MCPConnection, error) {
-	c, err := scanConnection(s.db.QueryRowContext(ctx, s.q(connectionSelect()+` WHERE id=? OR slug=?`), id, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ports.ErrNotFound
-	}
-	return c, err
-}
-func (s *Store) ResolveMCPConnection(ctx context.Context, hash string) (*domain.MCPConnection, error) {
-	c, err := scanConnection(s.db.QueryRowContext(ctx, s.q(connectionSelect()+` WHERE credential_hash=? AND enabled=?`), hash, true))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ports.ErrNotFound
-	}
-	return c, err
-}
-func (s *Store) ListMCPConnections(ctx context.Context) ([]domain.MCPConnection, error) {
-	rows, err := s.db.QueryContext(ctx, connectionSelect()+` ORDER BY name`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.MCPConnection
-	for rows.Next() {
-		c, err := scanConnection(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *c)
-	}
-	return out, rows.Err()
-}
-func (s *Store) TouchMCPConnection(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, s.q(`UPDATE mcp_connections SET last_used_at=? WHERE id=?`), ts(now()), id)
-	return err
-}
-
 func (s *Store) CreateSkillProposal(ctx context.Context, p *domain.SkillProposal) error {
 	if p.ID == "" {
 		p.ID = uuid.NewString()

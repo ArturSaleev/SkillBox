@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"time"
-)
+import "time"
 
 const (
 	PermissionSkillRead               = "skill.read"
@@ -59,16 +56,10 @@ const (
 )
 
 type MCPProfile struct {
-	ID          string    `json:"id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Permissions []string  `json:"permissions"`
-	Tools       []string  `json:"tools"`
-	BuiltIn     bool      `json:"built_in"`
-	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Permissions []string `json:"permissions"`
+	Tools       []string `json:"tools"`
 }
 
 func (p MCPProfile) Allows(permission string) bool {
@@ -89,37 +80,15 @@ func (p MCPProfile) AllowsTool(name string) bool {
 	return false
 }
 
-type MCPConnection struct {
-	ID             string     `json:"id"`
-	Slug           string     `json:"slug"`
-	Name           string     `json:"name"`
-	WorkspaceID    *string    `json:"workspace_id,omitempty"`
-	ProjectID      *string    `json:"project_id,omitempty"`
-	ProfileID      string     `json:"profile_id"`
-	AuthType       string     `json:"auth_type"`
-	CredentialHash string     `json:"-"`
-	Enabled        bool       `json:"enabled"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
-}
-
-func (c MCPConnection) Validate() error {
-	if c.Slug == "" || c.Name == "" || c.ProfileID == "" {
-		return errors.New("connection slug, name and profile_id are required")
-	}
-	if c.ProjectID != nil && c.WorkspaceID == nil {
-		return errors.New("project-scoped connection requires workspace_id")
-	}
-	if c.AuthType != "api_key" || c.CredentialHash == "" {
-		return errors.New("api_key connection credential is required")
-	}
-	return nil
+type MCPScope struct {
+	ActorID     string  `json:"actor_id"`
+	WorkspaceID *string `json:"workspace_id,omitempty"`
+	ProjectID   *string `json:"project_id,omitempty"`
 }
 
 type MCPAccess struct {
-	Connection MCPConnection `json:"connection"`
-	Profile    MCPProfile    `json:"profile"`
+	Scope   MCPScope   `json:"scope"`
+	Profile MCPProfile `json:"profile"`
 }
 
 type SkillProposal struct {

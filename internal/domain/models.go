@@ -8,7 +8,6 @@ const (
 	ScopeGlobal    Scope = "global"
 	ScopeWorkspace Scope = "workspace"
 	ScopeProject   Scope = "project"
-	ScopeUser      Scope = "user"
 )
 
 type SkillStatus string
@@ -30,13 +29,16 @@ type Workspace struct {
 }
 
 type Project struct {
-	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspace_id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string     `json:"id"`
+	WorkspaceID string     `json:"workspace_id"`
+	ExternalID  string     `json:"external_id,omitempty"`
+	Slug        string     `json:"slug"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	AutoCreated bool       `json:"auto_created"`
+	Workspace   *Workspace `json:"workspace,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type Step struct {
@@ -95,7 +97,6 @@ type Skill struct {
 	ID              string               `json:"id"`
 	WorkspaceID     *string              `json:"workspace_id,omitempty"`
 	ProjectID       *string              `json:"project_id,omitempty"`
-	OwnerUserID     *string              `json:"owner_user_id,omitempty"`
 	Slug            string               `json:"slug"`
 	Name            string               `json:"name"`
 	Description     string               `json:"description"`
@@ -170,7 +171,6 @@ type SearchFilter struct {
 	Task           string   `json:"task,omitempty"`
 	WorkspaceID    *string  `json:"workspace_id,omitempty"`
 	ProjectID      *string  `json:"project_id,omitempty"`
-	OwnerUserID    *string  `json:"owner_user_id,omitempty"`
 	Scopes         []Scope  `json:"scopes,omitempty"`
 	Domains        []string `json:"domains,omitempty"`
 	Intents        []string `json:"intents,omitempty"`
@@ -200,7 +200,6 @@ type PrepareRequest struct {
 	Task           string    `json:"task"`
 	WorkspaceID    *string   `json:"workspace_id,omitempty"`
 	ProjectID      *string   `json:"project_id,omitempty"`
-	OwnerUserID    *string   `json:"owner_user_id,omitempty"`
 	SkillID        *string   `json:"skill_id,omitempty"`
 	Domains        []string  `json:"domains,omitempty"`
 	Intents        []string  `json:"intents,omitempty"`

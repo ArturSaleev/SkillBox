@@ -5,26 +5,33 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/aibox/skillbox/internal/domain"
 	"github.com/aibox/skillbox/internal/ports"
 )
 
-func (s *Service) EnsureBuiltInProfiles(ctx context.Context) error {
-	for _, profile := range BuiltInProfiles() {
-		if err := s.Store.UpsertMCPProfile(ctx, &profile); err != nil {
-			return err
-		}
-	}
-	return nil
+func StudentProfile() domain.MCPProfile {
+	return domain.MCPProfile{Slug: "student", Name: "Student", Permissions: []string{domain.PermissionSkillSearch, domain.PermissionSkillPrepare, domain.PermissionExecutionReport}, Tools: []string{domain.ToolSearchSkills, domain.ToolPrepareSkill, domain.ToolReportSkillResult}}
 }
 
-func BuiltInProfiles() []domain.MCPProfile {
-	return []domain.MCPProfile{
-		{Slug: "student", Name: "Student", Description: "Minimal execution profile for small local models.", BuiltIn: true, Enabled: true, Permissions: []string{domain.PermissionSkillSearch, domain.PermissionSkillPrepare, domain.PermissionExecutionReport}, Tools: []string{domain.ToolSearchSkills, domain.ToolPrepareSkill, domain.ToolReportSkillResult}},
-		{Slug: "teacher", Name: "Teacher", Description: "Creates drafts and proposals and analyzes execution evidence.", BuiltIn: true, Enabled: true, Permissions: []string{domain.PermissionSkillRead, domain.PermissionSkillSearch, domain.PermissionSkillCreate, domain.PermissionSkillUpdate, domain.PermissionSkillValidate, domain.PermissionSkillPropose, domain.PermissionSkillVersionCreate, domain.PermissionStatisticsRead, domain.PermissionExecutionRead, domain.PermissionExecutionTrajectoryRead}, Tools: []string{domain.ToolSearchSkills, domain.ToolGetSkill, domain.ToolCreateSkillDraft, domain.ToolUpdateSkillDraft, domain.ToolValidateSkill, domain.ToolCreateSkillProposal, domain.ToolCreateSkillVersion, domain.ToolGetSkillStatistics, domain.ToolListRecentExecutions, domain.ToolGetExecution, domain.ToolGetExecutionTrajectory, domain.ToolGetSkillSuccesses, domain.ToolGetSkillFailures}},
-		{Slug: "reviewer", Name: "Reviewer", Description: "Reviews proposals and controls production publication and rollback.", BuiltIn: true, Enabled: true, Permissions: []string{domain.PermissionSkillRead, domain.PermissionSkillSearch, domain.PermissionSkillValidate, domain.PermissionSkillPublish, domain.PermissionSkillRollback}, Tools: []string{domain.ToolSearchSkills, domain.ToolGetSkill, domain.ToolValidateSkill, domain.ToolGetSkillProposal, domain.ToolListSkillProposals, domain.ToolApproveSkillProposal, domain.ToolRejectSkillProposal, domain.ToolPublishSkill, domain.ToolRollbackSkillVersion}},
+func TeacherProfile() domain.MCPProfile {
+	return domain.MCPProfile{
+		Slug: "teacher",
+		Name: "Teacher",
+		Permissions: []string{
+			domain.PermissionSkillRead, domain.PermissionSkillSearch, domain.PermissionSkillCreate,
+			domain.PermissionSkillUpdate, domain.PermissionSkillValidate, domain.PermissionSkillPropose,
+			domain.PermissionSkillVersionCreate, domain.PermissionSkillPublish, domain.PermissionSkillRollback,
+			domain.PermissionStatisticsRead, domain.PermissionExecutionRead, domain.PermissionExecutionTrajectoryRead,
+		},
+		Tools: []string{
+			domain.ToolSearchSkills, domain.ToolGetSkill, domain.ToolCreateSkillDraft, domain.ToolUpdateSkillDraft,
+			domain.ToolValidateSkill, domain.ToolCreateSkillProposal, domain.ToolCreateSkillVersion,
+			domain.ToolGetSkillStatistics, domain.ToolListRecentExecutions, domain.ToolGetExecution,
+			domain.ToolGetExecutionTrajectory, domain.ToolGetSkillSuccesses, domain.ToolGetSkillFailures,
+			domain.ToolGetSkillProposal, domain.ToolListSkillProposals, domain.ToolApproveSkillProposal,
+			domain.ToolRejectSkillProposal, domain.ToolPublishSkill, domain.ToolRollbackSkillVersion,
+		},
 	}
 }
 
@@ -33,35 +40,33 @@ func Visible(access domain.MCPAccess, skill *domain.Skill) bool {
 	case domain.ScopeGlobal:
 		return true
 	case domain.ScopeWorkspace:
-		return access.Connection.WorkspaceID != nil && skill.WorkspaceID != nil && *access.Connection.WorkspaceID == *skill.WorkspaceID
+		return access.Scope.WorkspaceID != nil && skill.WorkspaceID != nil && *access.Scope.WorkspaceID == *skill.WorkspaceID
 	case domain.ScopeProject:
-		return access.Connection.WorkspaceID != nil && skill.WorkspaceID != nil && *access.Connection.WorkspaceID == *skill.WorkspaceID && access.Connection.ProjectID != nil && skill.ProjectID != nil && *access.Connection.ProjectID == *skill.ProjectID
+		return access.Scope.WorkspaceID != nil && skill.WorkspaceID != nil && *access.Scope.WorkspaceID == *skill.WorkspaceID && access.Scope.ProjectID != nil && skill.ProjectID != nil && *access.Scope.ProjectID == *skill.ProjectID
 	default:
 		return false
 	}
 }
 
 func ApplyScope(access domain.MCPAccess, filter *domain.SearchFilter) {
-	filter.WorkspaceID = access.Connection.WorkspaceID
-	filter.ProjectID = access.Connection.ProjectID
+	filter.WorkspaceID = access.Scope.WorkspaceID
+	filter.ProjectID = access.Scope.ProjectID
 }
 
 func ApplyPrepareScope(access domain.MCPAccess, request *domain.PrepareRequest) {
-	request.WorkspaceID = access.Connection.WorkspaceID
-	request.ProjectID = access.Connection.ProjectID
+	request.WorkspaceID = access.Scope.WorkspaceID
+	request.ProjectID = access.Scope.ProjectID
 }
 
 func ApplySkillScope(access domain.MCPAccess, skill *domain.Skill) {
-	if access.Connection.ProjectID != nil {
+	if access.Scope.ProjectID != nil {
 		skill.Scope = domain.ScopeProject
-		skill.WorkspaceID = access.Connection.WorkspaceID
-		skill.ProjectID = access.Connection.ProjectID
-		skill.OwnerUserID = nil
-	} else if access.Connection.WorkspaceID != nil {
+		skill.WorkspaceID = access.Scope.WorkspaceID
+		skill.ProjectID = access.Scope.ProjectID
+	} else if access.Scope.WorkspaceID != nil {
 		skill.Scope = domain.ScopeWorkspace
-		skill.WorkspaceID = access.Connection.WorkspaceID
+		skill.WorkspaceID = access.Scope.WorkspaceID
 		skill.ProjectID = nil
-		skill.OwnerUserID = nil
 	}
 }
 
@@ -79,7 +84,7 @@ func (s *Service) CreateDraft(ctx context.Context, access domain.MCPAccess, skil
 	skill.ID = ""
 	skill.Status = domain.StatusDraft
 	ApplySkillScope(access, skill)
-	actor := access.Connection.ID
+	actor := access.Scope.ActorID
 	if err := s.Store.CreateSkill(ctx, skill, "teacher draft", &actor); err != nil {
 		return nil, err
 	}
@@ -97,8 +102,7 @@ func (s *Service) UpdateDraft(ctx context.Context, access domain.MCPAccess, skil
 	skill.Scope = existing.Scope
 	skill.WorkspaceID = existing.WorkspaceID
 	skill.ProjectID = existing.ProjectID
-	skill.OwnerUserID = existing.OwnerUserID
-	actor := access.Connection.ID
+	actor := access.Scope.ActorID
 	if err = s.Store.UpdateSkill(ctx, skill, summary, &actor); err != nil {
 		return nil, err
 	}
@@ -139,7 +143,7 @@ func (s *Service) CreateProposal(ctx context.Context, access domain.MCPAccess, s
 	if err != nil {
 		return nil, err
 	}
-	actor := access.Connection.ID
+	actor := access.Scope.ActorID
 	p := &domain.SkillProposal{SkillID: skill.ID, BaseVersion: skill.CurrentVersion, ProposedSnapshot: string(raw), Summary: summary, Status: "pending", CreatedBy: &actor}
 	if err = s.Store.CreateSkillProposal(ctx, p); err != nil {
 		return nil, err
@@ -158,7 +162,7 @@ func (s *Service) PublishProposal(ctx context.Context, access domain.MCPAccess, 
 	if err != nil {
 		return nil, err
 	}
-	return s.publishProposal(ctx, p, current, access.Connection.ID)
+	return s.publishProposal(ctx, p, current, access.Scope.ActorID)
 }
 
 func (s *Service) PublishProposalAdmin(ctx context.Context, proposalID, actor string) (*domain.Skill, error) {
@@ -214,22 +218,4 @@ func (s *Service) ScopedExecutions(ctx context.Context, access domain.MCPAccess,
 		}
 	}
 	return out, nil
-}
-func ValidateProfile(profile *domain.MCPProfile) error {
-	if strings.TrimSpace(profile.Slug) == "" || strings.TrimSpace(profile.Name) == "" {
-		return errors.New("profile slug and name are required")
-	}
-	if len(profile.Permissions) == 0 || len(profile.Tools) == 0 {
-		return errors.New("profile permissions and tools are required")
-	}
-	for _, tool := range profile.Tools {
-		permission, ok := domain.ToolPermission(tool)
-		if !ok {
-			return fmt.Errorf("unknown MCP tool %q", tool)
-		}
-		if !profile.Allows(permission) {
-			return fmt.Errorf("tool %q requires permission %q", tool, permission)
-		}
-	}
-	return nil
 }

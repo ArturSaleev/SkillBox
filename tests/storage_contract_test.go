@@ -3,12 +3,15 @@ package tests
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/aibox/skillbox/internal/domain"
+	"github.com/aibox/skillbox/internal/storage/sqlite"
 	"github.com/google/uuid"
 )
 
@@ -79,18 +82,6 @@ func TestStorageContract(t *testing.T) {
 			if len(trajectory) != 2 {
 				t.Fatalf("trajectory=%#v", trajectory)
 			}
-			profile := domain.MCPProfile{Slug: "profile-" + suffix, Name: "Profile", Permissions: []string{domain.PermissionSkillRead}, Tools: []string{domain.ToolGetSkill}, Enabled: true}
-			if err = store.UpsertMCPProfile(ctx, &profile); err != nil {
-				t.Fatal(err)
-			}
-			connection := domain.MCPConnection{Slug: "connection-" + suffix, Name: "Connection", ProfileID: profile.ID, AuthType: "api_key", CredentialHash: "hash-" + suffix, Enabled: true}
-			if err = store.CreateMCPConnection(ctx, &connection); err != nil {
-				t.Fatal(err)
-			}
-			resolved, err := store.ResolveMCPConnection(ctx, connection.CredentialHash)
-			if err != nil || resolved.ID != connection.ID {
-				t.Fatalf("resolved=%#v err=%v", resolved, err)
-			}
 			proposal := domain.SkillProposal{SkillID: sk.ID, BaseVersion: 3, ProposedSnapshot: `{}`, Summary: "contract"}
 			if err = store.CreateSkillProposal(ctx, &proposal); err != nil {
 				t.Fatal(err)
@@ -110,7 +101,7 @@ func TestStorageContract(t *testing.T) {
 }
 func TestMigrationFilesStayMirrored(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql", "postgres"} {
-		for _, name := range []string{"001_initial.sql", "002_user_scope.sql", "003_mcp_profiles.sql"} {
+		for _, name := range []string{"001_initial.sql"} {
 			source := fmt.Sprintf("../migrations/%s/%s", driver, name)
 			embedded := fmt.Sprintf("../internal/migrate/sql/%s_%s", driver, name)
 			a, err := os.ReadFile(source)
@@ -125,5 +116,40 @@ func TestMigrationFilesStayMirrored(t *testing.T) {
 				t.Fatalf("%s %s migration embed copy is stale", driver, name)
 			}
 		}
+	}
+}
+
+func TestFreshSQLiteSchemaOmitsMCPAccessTables(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "minimal.db")
+	store, err := sqlite.Open(context.Background(), path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, table := range []string{"mcp_profiles", "mcp_connections"} {
+		var count int
+		if err = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("obsolete table %s exists", table)
+		}
+	}
+	for _, table := range []string{"projects", "skills", "skill_versions", "skill_executions", "skill_proposals"} {
+		var count int
+		if err = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("required table %s count=%d err=%v", table, count, err)
+		}
+	}
+	var migrations int
+	if err = db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil || migrations != 1 {
+		t.Fatalf("schema migrations=%d err=%v", migrations, err)
 	}
 }

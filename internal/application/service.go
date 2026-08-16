@@ -33,7 +33,7 @@ func (s *Service) Prepare(ctx context.Context, r domain.PrepareRequest) (domain.
 	if r.SkillID != nil && *r.SkillID != "" {
 		sk, err = s.Store.GetSkill(ctx, *r.SkillID)
 	} else {
-		candidates, e := s.Search(ctx, domain.SearchFilter{Task: r.Task, WorkspaceID: r.WorkspaceID, ProjectID: r.ProjectID, OwnerUserID: r.OwnerUserID, Domains: r.Domains, Intents: r.Intents, ObjectTypes: r.ObjectTypes, AvailableTools: r.AvailableTools, Limit: 1})
+		candidates, e := s.Search(ctx, domain.SearchFilter{Task: r.Task, WorkspaceID: r.WorkspaceID, ProjectID: r.ProjectID, Domains: r.Domains, Intents: r.Intents, ObjectTypes: r.ObjectTypes, AvailableTools: r.AvailableTools, Limit: 1})
 		if e != nil {
 			return domain.PreparedSkill{}, e
 		}

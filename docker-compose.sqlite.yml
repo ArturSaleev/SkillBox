@@ -2,13 +2,9 @@ services:
   skillbox:
     build: .
     ports:
-      - "8080:8080"
-    environment:
-      SKILLBOX_DATABASE_DRIVER: sqlite
-      SKILLBOX_DATABASE_PATH: /data/skillbox.db
-      SKILLBOX_SEED_DEMO: "true"
+      - "8081:8081"
     volumes:
-      - skillbox-sqlite:/data
+      - skillbox-sqlite:/app/data
     restart: unless-stopped
 
 volumes:

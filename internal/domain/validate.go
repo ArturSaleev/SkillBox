@@ -25,12 +25,6 @@ func (s *Skill) Validate() error {
 	if s.Scope == ScopeProject && (s.WorkspaceID == nil || s.ProjectID == nil) {
 		return errors.New("project skill requires workspace_id and project_id")
 	}
-	if s.Scope == ScopeUser && s.OwnerUserID == nil {
-		return errors.New("user skill requires owner_user_id")
-	}
-	if s.Scope != ScopeUser && s.OwnerUserID != nil {
-		return errors.New("owner_user_id is only valid for user skills")
-	}
 	for _, tool := range s.Tools {
 		if tool.Requirement != "required" && tool.Requirement != "optional" {
 			return fmt.Errorf("invalid tool requirement %q", tool.Requirement)
@@ -51,7 +45,7 @@ func (s *Skill) Validate() error {
 
 func validScope(scope Scope) bool {
 	switch scope {
-	case ScopeGlobal, ScopeWorkspace, ScopeProject, ScopeUser:
+	case ScopeGlobal, ScopeWorkspace, ScopeProject:
 		return true
 	default:
 		return false

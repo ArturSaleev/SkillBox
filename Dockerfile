@@ -9,13 +9,12 @@ RUN CGO_ENABLED=0 GOWORK=off go test ./... && \
 
 FROM alpine:3.22
 RUN addgroup -S skillbox && adduser -S -G skillbox skillbox && \
-    mkdir -p /app/configs /data && chown -R skillbox:skillbox /app /data
+    mkdir -p /app/configs /app/data && chown -R skillbox:skillbox /app
 WORKDIR /app
 COPY --from=builder /out/skillbox /app/skillbox
 COPY configs/skillbox.example.yaml /app/configs/skillbox.yaml
 USER skillbox
-EXPOSE 8080
-VOLUME ["/data"]
-ENV SKILLBOX_DATABASE_PATH=/data/skillbox.db
+EXPOSE 8081
+VOLUME ["/app/data"]
 ENTRYPOINT ["/app/skillbox"]
 CMD ["-config", "/app/configs/skillbox.yaml"]

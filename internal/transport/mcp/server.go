@@ -4,64 +4,75 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
-	"time"
 
 	"github.com/aibox/skillbox/internal/application"
-	"github.com/aibox/skillbox/internal/auth"
 	"github.com/aibox/skillbox/internal/domain"
-	"github.com/aibox/skillbox/internal/metrics"
 	"github.com/aibox/skillbox/internal/ports"
 	"github.com/go-chi/chi/v5"
 )
 
 type AccessResolver interface {
-	Resolve(*http.Request) (*domain.MCPAccess, error)
+	Resolve(*http.Request, string) (*domain.MCPAccess, error)
 }
-type ConnectionResolver struct{ store ports.Storage }
+type LocalResolver struct {
+	store       ports.Storage
+	workspaceID string
+}
 
-func NewConnectionResolver(store ports.Storage) *ConnectionResolver {
-	return &ConnectionResolver{store: store}
+func NewLocalResolver(store ports.Storage, workspaceID string) *LocalResolver {
+	return &LocalResolver{store: store, workspaceID: workspaceID}
 }
-func (r *ConnectionResolver) Resolve(req *http.Request) (*domain.MCPAccess, error) {
-	key := strings.TrimSpace(req.Header.Get("X-SkillBox-Key"))
-	if key == "" {
-		key = strings.TrimSpace(req.Header.Get("X-API-Key"))
+
+var safeProjectID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+func NormalizeProjectID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("project_id is required")
 	}
-	if key == "" {
-		if h := req.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(h), "bearer ") {
-			key = strings.TrimSpace(h[7:])
-		}
+	if value == "." || value == ".." || !safeProjectID.MatchString(value) {
+		return "", errors.New("invalid project_id")
 	}
-	if key == "" {
-		return nil, errors.New("MCP connection credential is required")
-	}
-	connection, err := r.store.ResolveMCPConnection(req.Context(), auth.HashAPIKey(key))
+	return value, nil
+}
+
+func (r *LocalResolver) Resolve(req *http.Request, method string) (*domain.MCPAccess, error) {
+	projectID, err := NormalizeProjectID(chi.URLParam(req, "project"))
 	if err != nil {
-		return nil, errors.New("invalid MCP connection credential")
+		return nil, err
 	}
-	if hint := chi.URLParam(req, "connection"); hint != "" && hint != connection.ID && hint != connection.Slug {
-		return nil, errors.New("credential does not match MCP connection path")
+	role := "student"
+	profile := application.StudentProfile()
+	if strings.HasSuffix(strings.TrimSuffix(req.URL.Path, "/"), "/teacher") {
+		role = "teacher"
+		profile = application.TeacherProfile()
 	}
-	profile, err := r.store.GetMCPProfile(req.Context(), connection.ProfileID)
-	if err != nil || !profile.Enabled {
-		return nil, errors.New("MCP profile is unavailable")
+	project, err := r.store.GetProject(req.Context(), projectID, &r.workspaceID)
+	if errors.Is(err, ports.ErrNotFound) && method == "initialize" {
+		project, err = r.store.EnsureProject(req.Context(), r.workspaceID, projectID, projectID)
 	}
-	_ = r.store.TouchMCPConnection(req.Context(), connection.ID)
-	return &domain.MCPAccess{Connection: *connection, Profile: *profile}, nil
+	if err != nil {
+		return nil, err
+	}
+	workspaceID, resolvedProjectID := r.workspaceID, project.ID
+	scope := domain.MCPScope{
+		ActorID:     project.Slug + ":" + role,
+		WorkspaceID: &workspaceID,
+		ProjectID:   &resolvedProjectID,
+	}
+	return &domain.MCPAccess{Scope: scope, Profile: profile}, nil
 }
 
 type Server struct {
 	app      *application.Service
-	metrics  *metrics.Metrics
-	logger   *slog.Logger
 	resolver AccessResolver
 }
 
-func New(app *application.Service, m *metrics.Metrics, logger *slog.Logger, resolver AccessResolver) *Server {
-	return &Server{app: app, metrics: m, logger: logger, resolver: resolver}
+func New(app *application.Service, resolver AccessResolver) *Server {
+	return &Server{app: app, resolver: resolver}
 }
 
 type request struct {
@@ -92,29 +103,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	access, err := s.resolver.Resolve(r)
-	if err != nil {
-		s.reply(w, response{JSONRPC: "2.0", Error: &rpcError{Code: -32001, Message: err.Error()}})
-		return
-	}
 	var req request
-	if err = json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
 		s.reply(w, response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "parse error"}})
 		return
 	}
-	start := time.Now()
-	status := "ok"
-	defer func() {
-		s.metrics.MCPRequests.WithLabelValues(access.Profile.Slug, req.Method, status).Inc()
-		s.logger.InfoContext(r.Context(), "mcp request", "connection_id", access.Connection.ID, "profile", access.Profile.Slug, "method", req.Method, "status", status, "duration_ms", time.Since(start).Milliseconds())
-	}()
+	access, err := s.resolver.Resolve(r, req.Method)
+	if err != nil {
+		s.reply(w, response{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32001, Message: err.Error()}})
+		return
+	}
 	if req.Method == "notifications/initialized" {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	result, err := s.handle(r, *access, req)
 	if err != nil {
-		status = "error"
 		code := -32603
 		if errors.Is(err, ports.ErrNotFound) {
 			code = -32004
@@ -170,9 +174,7 @@ func (s *Server) callTool(r *http.Request, access domain.MCPAccess, call toolCal
 		if !access.Profile.Allows(domain.PermissionSkillRead) {
 			v.Status = string(domain.StatusActive)
 		}
-		start := time.Now()
 		items, err := s.app.Search(ctx, v)
-		s.metrics.SearchDuration.Observe(time.Since(start).Seconds())
 		if err != nil {
 			return nil, err
 		}
@@ -202,9 +204,7 @@ func (s *Server) callTool(r *http.Request, access domain.MCPAccess, call toolCal
 				return nil, ports.ErrNotFound
 			}
 		}
-		start := time.Now()
 		item, err := s.app.Prepare(ctx, v)
-		s.metrics.CompileDuration.Observe(time.Since(start).Seconds())
 		if err != nil {
 			return nil, err
 		}
@@ -217,16 +217,12 @@ func (s *Server) callTool(r *http.Request, access domain.MCPAccess, call toolCal
 		if _, err := s.app.GetVisibleSkill(ctx, access, v.SkillID); err != nil {
 			return nil, err
 		}
-		v.WorkspaceID = access.Connection.WorkspaceID
-		v.ProjectID = access.Connection.ProjectID
-		agent := access.Connection.ID
+		v.WorkspaceID = access.Scope.WorkspaceID
+		v.ProjectID = access.Scope.ProjectID
+		agent := access.Scope.ActorID
 		v.AgentID = &agent
 		if err := s.app.Store.CreateExecution(ctx, &v); err != nil {
 			return nil, err
-		}
-		s.metrics.Executions.Inc()
-		if v.Success {
-			s.metrics.ExecutionSuccess.Inc()
 		}
 		result = map[string]any{"execution_id": v.ID, "accepted": true}
 	case domain.ToolCreateSkillDraft:
@@ -392,7 +388,7 @@ func (s *Server) callTool(r *http.Request, access domain.MCPAccess, call toolCal
 		if call.Name == domain.ToolRejectSkillProposal {
 			status = "rejected"
 		}
-		actor := access.Connection.ID
+		actor := access.Scope.ActorID
 		result, err = s.app.Store.ReviewSkillProposal(ctx, v.ProposalID, status, &actor, v.Note)
 		if err != nil {
 			return nil, err
@@ -420,7 +416,7 @@ func (s *Server) callTool(r *http.Request, access domain.MCPAccess, call toolCal
 		if _, err := s.app.GetVisibleSkill(ctx, access, v.SkillID); err != nil {
 			return nil, err
 		}
-		actor := access.Connection.ID
+		actor := access.Scope.ActorID
 		item, err := s.app.Store.RollbackSkill(ctx, v.SkillID, v.Version, &actor)
 		if err != nil {
 			return nil, err

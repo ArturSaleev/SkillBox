@@ -11,11 +11,15 @@ var ErrNotFound = errors.New("not found")
 
 type WorkspaceRepository interface {
 	CreateWorkspace(context.Context, *domain.Workspace) error
+	GetWorkspace(context.Context, string) (*domain.Workspace, error)
+	EnsureWorkspace(context.Context, string, string) (*domain.Workspace, error)
 	ListWorkspaces(context.Context) ([]domain.Workspace, error)
 }
 
 type ProjectRepository interface {
 	CreateProject(context.Context, *domain.Project) error
+	GetProject(context.Context, string, *string) (*domain.Project, error)
+	EnsureProject(context.Context, string, string, string) (*domain.Project, error)
 	ListProjects(context.Context, *string) ([]domain.Project, error)
 }
 
@@ -40,18 +44,6 @@ type ExecutionRepository interface {
 	Statistics(context.Context, *string) ([]domain.Statistics, error)
 }
 
-type MCPAccessRepository interface {
-	UpsertMCPProfile(context.Context, *domain.MCPProfile) error
-	GetMCPProfile(context.Context, string) (*domain.MCPProfile, error)
-	GetMCPProfileBySlug(context.Context, string) (*domain.MCPProfile, error)
-	ListMCPProfiles(context.Context) ([]domain.MCPProfile, error)
-	CreateMCPConnection(context.Context, *domain.MCPConnection) error
-	GetMCPConnection(context.Context, string) (*domain.MCPConnection, error)
-	ListMCPConnections(context.Context) ([]domain.MCPConnection, error)
-	ResolveMCPConnection(context.Context, string) (*domain.MCPConnection, error)
-	TouchMCPConnection(context.Context, string) error
-}
-
 type SkillProposalRepository interface {
 	CreateSkillProposal(context.Context, *domain.SkillProposal) error
 	GetSkillProposal(context.Context, string) (*domain.SkillProposal, error)
@@ -66,7 +58,6 @@ type Storage interface {
 	SkillRepository
 	SkillVersionRepository
 	ExecutionRepository
-	MCPAccessRepository
 	SkillProposalRepository
 	Ping(context.Context) error
 	Close() error
