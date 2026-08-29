@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a scoped improvement backed by a real workflow
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Early ideas and architectural questions are usually better in GitHub Discussions. Use this form when the problem and desired outcome are concrete enough to implement.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing Issues, Discussions, and the Roadmap.
+          required: true
+        - label: I can describe the underlying workflow problem, not only a preferred implementation.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Workflow problem
+      description: Which repeated agent or operator problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and how success can be measured.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Skill model
+        - Search or compilation
+        - Lifecycle or versions
+        - Student MCP
+        - Teacher MCP
+        - Dashboard
+        - Storage or migrations
+        - Security or deployment
+        - Integration example
+        - Evaluation
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example scenario
+      description: Show a non-sensitive input, expected behavior, and current failure.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What can users do today, and why is it insufficient?
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility or security impact
+      description: Note changes to MCP tools, schemas, scope, authentication, data, or deployment.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/ArturSaleev/SkillBox/discussions
+    about: Ask questions, share use cases, and discuss early proposals.
+  - name: Security vulnerability
+    url: https://github.com/ArturSaleev/SkillBox/security
+    about: Review the private reporting guidance before disclosing security details.

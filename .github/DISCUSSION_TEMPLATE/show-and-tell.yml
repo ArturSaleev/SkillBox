@@ -1,0 +1,38 @@
+title: "[Show and tell] "
+labels:
+  - show-and-tell
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show how you are using SkillBox or describe a workflow you want your agent to remember. Remove secrets, personal data, production identifiers, and proprietary procedure text.
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What is the agent trying to complete, and why does it repeat?
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Stack
+      description: Model, agent framework, MCP client, and relevant tools.
+      placeholder: Local 7B model, custom Go agent, filesystem tools
+  - type: textarea
+    id: skill
+    attributes:
+      label: Procedure design
+      description: Summarize triggers, required context, tools, steps, and success criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Compare behavior with and without the Skill when possible.
+  - type: textarea
+    id: lessons
+    attributes:
+      label: What did you learn?
+      description: Share failures and limitations as well as successes.

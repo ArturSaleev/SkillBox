@@ -1,0 +1,24 @@
+title: "[General] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start a broad SkillBox conversation, introduce a relevant project, or share feedback that does not fit Ideas, Q&A, or Show and tell.
+  - type: textarea
+    id: topic
+    attributes:
+      label: Topic
+      description: What would you like the community to discuss?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Add the agent workflow, model, tools, or project background that helps others understand the topic.
+  - type: textarea
+    id: questions
+    attributes:
+      label: Questions for the community
+      description: Specific questions usually receive better responses.

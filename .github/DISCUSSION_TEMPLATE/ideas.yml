@@ -1,0 +1,39 @@
+title: "[Idea] "
+labels:
+  - idea
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share the workflow problem before proposing a large solution. Early ideas are welcome and do not need to be implementation-ready.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the repeated agent or operator failure.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: What happens today?
+      description: Include a safe example and the current workaround when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a useful outcome look like?
+      description: Prefer measurable behavior over a list of implementation details.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Possible approach
+      description: Optional design ideas, tradeoffs, or prior art.
+  - type: input
+    id: participation
+    attributes:
+      label: How would you like to participate?
+      placeholder: Testing, design, implementation, documentation, evaluation...

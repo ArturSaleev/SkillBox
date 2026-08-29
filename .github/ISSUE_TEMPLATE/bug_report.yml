@@ -1,0 +1,90 @@
+name: Bug report
+description: Report a reproducible SkillBox defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve SkillBox. Remove secrets, personal data, proprietary Skills, DSNs, and database contents before posting.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing Issues and Discussions.
+          required: true
+        - label: I reproduced the problem with the latest code or release available to me.
+          required: true
+        - label: This report contains no credentials, private data, or proprietary procedures.
+          required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and why it is a problem.
+      placeholder: A project-scoped Student request returns...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: I expected...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe sequence that reproduces the issue.
+      placeholder: |
+        1. Start SkillBox with...
+        2. Initialize...
+        3. Call...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Student MCP
+        - Teacher MCP
+        - Dashboard
+        - Admin API
+        - SQLite storage
+        - MySQL storage
+        - PostgreSQL storage
+        - Build or release
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.x.y or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, database, Go version, browser, and deployment method when relevant.
+      placeholder: macOS ARM64, SQLite, local binary
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant sanitized output
+      description: Paste only the smallest useful error or response. Redact secrets and private data.
+      render: text
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Include screenshots or related links when useful.

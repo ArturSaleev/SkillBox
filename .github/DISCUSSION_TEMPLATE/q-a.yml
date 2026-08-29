@@ -1,0 +1,30 @@
+title: "[Q&A] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask about installation, MCP integration, Skill design, evaluation, or contribution. Use the bug form when you have a reproducible defect.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Include relevant sanitized commands, configuration, or responses.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, architecture, database, deployment, MCP client
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
