@@ -1,0 +1,15 @@
+.git
+.idea
+.vscode
+data
+release
+skillbox
+dashboard/.next
+dashboard/out
+dashboard/node_modules
+.env
+.env.*
+dashboard/.env*.local
+configs/skillbox.yaml
+*.log
+.DS_Store

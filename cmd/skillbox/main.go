@@ -14,6 +14,7 @@ import (
 
 	"github.com/aibox/skillbox/internal/application"
 	"github.com/aibox/skillbox/internal/config"
+	"github.com/aibox/skillbox/internal/dashboard"
 	"github.com/aibox/skillbox/internal/ports"
 	"github.com/aibox/skillbox/internal/storage/mysql"
 	"github.com/aibox/skillbox/internal/storage/postgres"
@@ -48,6 +49,9 @@ func main() {
 	router := chi.NewRouter()
 	router.Handle("/mcp/{project}", handler)
 	router.Handle("/mcp/{project}/teacher", handler)
+	router.Mount("/admin/api", dashboard.AdminHandler(store))
+	router.Handle("/", dashboard.Handler())
+	router.Handle("/*", dashboard.Handler())
 	srv := &http.Server{Addr: cfg.Server.Address, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second}
 	go func() {
 		logger.Info("SkillBox started", "address", cfg.Server.Address, "database_driver", cfg.Database.Driver)

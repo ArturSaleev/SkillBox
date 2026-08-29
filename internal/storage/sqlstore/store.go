@@ -434,6 +434,24 @@ func (s *Store) ListSkills(ctx context.Context) ([]domain.Skill, error) {
 }
 
 func (s *Store) loadRelations(ctx context.Context, sk *domain.Skill) error {
+	// Collection fields are part of the JSON contract. Keep empty relations as
+	// [] instead of null so Dashboard and MCP clients can iterate safely.
+	if sk.SuccessCriteria == nil {
+		sk.SuccessCriteria = []string{}
+	}
+	sk.Domains = []string{}
+	sk.Intents = []string{}
+	sk.ObjectTypes = []string{}
+	sk.Tags = []string{}
+	sk.Keywords = []string{}
+	sk.Capabilities = []string{}
+	sk.Compatibility = []string{}
+	sk.Steps = []domain.Step{}
+	sk.Tools = []domain.ToolRequirement{}
+	sk.Contexts = []domain.ContextRequirement{}
+	sk.Dependencies = []domain.Dependency{}
+	sk.Examples = []domain.Example{}
+
 	sets := []struct {
 		table  string
 		target *[]string

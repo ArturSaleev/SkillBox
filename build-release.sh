@@ -6,6 +6,8 @@ DIST_DIR="${DIST_DIR:-$(cd "$ROOT_DIR/.." && pwd)/release}"
 RELEASE_NAME="SkillBox"
 MODE="${1:-host}"
 
+cd "$ROOT_DIR"
+
 case "$MODE" in
   host)
     targets="$(go env GOOS)/$(go env GOARCH)"
@@ -19,6 +21,8 @@ case "$MODE" in
     ;;
 esac
 
+"$ROOT_DIR/build-dashboard.sh"
+
 for target in $targets; do
   os="${target%/*}"
   arch="${target#*/}"
@@ -26,7 +30,9 @@ for target in $targets; do
   mkdir -p "$bundle/configs" "$bundle/docs"
   binary="$RELEASE_NAME"
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags="-s -w" -o "$bundle/$binary" ./cmd/skillbox
-  cp configs/skillbox.example.yaml "$bundle/configs/skillbox.yaml"
+  if [[ ! -f "$bundle/configs/skillbox.yaml" ]]; then
+    cp configs/skillbox.example.yaml "$bundle/configs/skillbox.yaml"
+  fi
   cp README.md "$bundle/README.md"
   cp docs/*.md "$bundle/docs/"
   echo "built $bundle"

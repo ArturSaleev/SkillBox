@@ -99,6 +99,23 @@ func TestStorageContract(t *testing.T) {
 		})
 	}
 }
+
+func TestSkillCollectionsAreNeverNil(t *testing.T) {
+	store := sqliteStore(t)
+	ctx := context.Background()
+	skill := domain.Skill{Slug: "empty-collections", Name: "Empty collections", Scope: domain.ScopeGlobal, Status: domain.StatusDraft}
+	if err := store.CreateSkill(ctx, &skill, "initial", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetSkill(ctx, skill.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SuccessCriteria == nil || got.Domains == nil || got.Intents == nil || got.ObjectTypes == nil || got.Tags == nil || got.Keywords == nil || got.Capabilities == nil || got.Compatibility == nil || got.Steps == nil || got.Tools == nil || got.Contexts == nil || got.Dependencies == nil || got.Examples == nil {
+		t.Fatalf("empty Skill collections must be non-nil: %#v", got)
+	}
+}
+
 func TestMigrationFilesStayMirrored(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql", "postgres"} {
 		for _, name := range []string{"001_initial.sql"} {

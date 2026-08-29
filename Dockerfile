@@ -1,9 +1,18 @@
 # syntax=docker/dockerfile:1.7
+FROM node:24-bookworm-slim AS dashboard-builder
+WORKDIR /src/dashboard
+COPY dashboard/package.json dashboard/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY dashboard/ ./
+ENV NEXT_PUBLIC_API_URL=""
+RUN npm run build
+
 FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=dashboard-builder /src/dashboard/out/ ./internal/dashboard/dist/
 RUN CGO_ENABLED=0 GOWORK=off go test ./... && \
     CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/skillbox ./cmd/skillbox
 

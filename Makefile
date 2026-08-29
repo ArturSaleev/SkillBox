@@ -1,6 +1,9 @@
-.PHONY: build test fmt run
+.PHONY: dashboard build test fmt run
 
-build:
+dashboard:
+	./build-dashboard.sh
+
+build: dashboard
 	GOWORK=off go build -trimpath -o skillbox ./cmd/skillbox
 
 test:

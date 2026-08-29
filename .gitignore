@@ -3,3 +3,40 @@
 /release/
 *.log
 .DS_Store
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Next.js dashboard dependencies and build output
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Package manager diagnostics and local caches
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+
+# Editors and operating-system metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local database sidecars
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Generated Dashboard export copied into the Go embed package
+/internal/dashboard/dist/*
+!/internal/dashboard/dist/README.txt

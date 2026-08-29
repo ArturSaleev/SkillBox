@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 30% 98%;
+  --foreground: 218 34% 15%;
+  --card: 0 0% 100%;
+  --border: 214 22% 89%;
+  --muted: 210 25% 95%;
+  --muted-foreground: 215 15% 46%;
+  --primary: 188 80% 38%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 38 92% 55%;
+  --destructive: 0 72% 51%;
+}
+
+.dark {
+  --background: 218 34% 8%;
+  --foreground: 210 25% 96%;
+  --card: 217 28% 12%;
+  --border: 216 20% 21%;
+  --muted: 217 24% 17%;
+  --muted-foreground: 215 16% 65%;
+  --primary: 188 75% 48%;
+  --primary-foreground: 218 34% 8%;
+  --accent: 38 92% 55%;
+  --destructive: 0 62% 47%;
+}
+
+* { border-color: hsl(var(--border)); }
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+::selection { background: hsl(var(--primary) / .22); }
+
+@layer components {
+  .page-shell { @apply mx-auto w-full max-w-[1600px] space-y-6 p-4 md:p-8; }
+  .page-heading { @apply text-2xl font-semibold tracking-tight md:text-3xl; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.18em] text-primary; }
+  .field-label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground; }
+}
