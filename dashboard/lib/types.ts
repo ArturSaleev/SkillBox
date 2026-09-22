@@ -16,6 +16,7 @@ export interface Skill {
   object_types: string[]; tags: string[]; keywords: string[]; capabilities: string[]; compatibility: string[];
   steps: Step[]; tools: ToolRequirement[]; context_requirements: ContextRequirement[]; dependencies: Dependency[];
   examples: Example[]; created_at: string; updated_at: string; project?: Project; mcp_project: string;
+  package_path?: string; package_hash?: string; package_indexed_at?: string;
 }
 
 export interface ExecutionEvent { id: string; execution_id?: string; position: number; type: string; data?: string; created_at?: string }
@@ -29,4 +30,13 @@ export interface ValidationResult { valid: boolean; issues: string[] }
 export interface CompiledStep { title: string; instruction: string; required: boolean }
 export interface CompiledSkill { instructions: string; steps: CompiledStep[]; required_tools: ToolRequirement[]; optional_tools: ToolRequirement[]; missing_tools?: string[]; context_requirements: ContextRequirement[]; success_criteria: string[]; examples?: Example[] }
 export interface PreparedSkill { skill_id: string; version: number; name: string; compiled_skill: CompiledSkill; estimated_tokens: number }
-export type SkillInput = Omit<Skill, "id" | "workspace_id" | "project_id" | "project" | "current_version" | "created_at" | "updated_at"> & { id?: string; current_version?: number };
+export type SkillInput = Omit<Skill, "id" | "workspace_id" | "project_id" | "project" | "current_version" | "created_at" | "updated_at" | "package_path" | "package_hash" | "package_indexed_at"> & { id?: string; current_version?: number };
+export interface PackageFile { path: string; kind: "skill" | "script" | "reference" | "asset" | "additional"; size: number }
+export interface PackageSource { type: "zip" | "git" | "directory"; url: string; revision?: string }
+export interface ExecutableFinding { path: string; language?: string; reason: string }
+export interface SecurityFinding { path: string; line?: number; capability: string; severity: string; rule: string; evidence?: string }
+export interface SecurityScan { findings: SecurityFinding[]; capabilities: string[]; files_scanned: number; recommendation: string }
+export interface ImportPreview { name: string; description: string; files: PackageFile[]; scripts: number; references: number; assets: number; source: PackageSource; package_hash: string; executable_code: ExecutableFinding[]; warnings: string[]; security_scan: SecurityScan }
+export interface AIReviewFinding { path?: string; line?: number; severity: string; category: string; title: string; explanation: string; recommendation: string }
+export interface SecurityReview { id: string; skill_id: string; package_hash: string; provider: string; model: string; summary: string; findings: AIReviewFinding[]; recommendation: string; outdated: boolean; reviewed_at: string }
+export interface CodeReviewConfig { configured: boolean; provider?: string; model?: string; endpoint?: string; external?: boolean }

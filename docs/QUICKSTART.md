@@ -169,6 +169,10 @@ curl -s http://127.0.0.1:8081/mcp/demo \
 
 The response contains compiled instructions, steps, tool requirements, context requirements, criteria, and estimated token usage. SkillBox does not execute the procedure; the agent does.
 
+For filesystem-backed Skills, preparation reads the current `SKILL.md` directly.
+It does not copy `scripts/`, `references/`, or `assets/` into the response; those
+resources remain available for explicit, need-based inspection.
+
 Save the exact prepared version for telemetry:
 
 ```bash

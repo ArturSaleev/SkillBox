@@ -46,6 +46,7 @@ SkillBox превращает процедуры в управляемые за�
 - **Структурированные процедуры** — шаги, контекст, инструменты, зависимости, примеры и критерии успеха.
 - **Доказательства выполнения** — успехи, ошибки, модель, длительность, вызовы инструментов и trajectory.
 - **Три БД** — SQLite, MySQL и PostgreSQL.
+- **Filesystem как источник содержимого** — portable packages хранят содержимое Skills, а SQL — индекс, lifecycle, runtime state и историю.
 - **Глобальная админ-панель** — все проекты и Skills в одном Dashboard.
 - **Один production-бинарник** — статический Next.js Dashboard встроен в Go через `go:embed`.
 - **Портативные релизы** — macOS и Linux, ARM64 и AMD64.
@@ -60,14 +61,23 @@ SkillBox превращает процедуры в управляемые за�
 
 *Поиск и фильтрация Skills из всех MCP-проектов по проекту, статусу и области действия.*
 
+## SkillBox Bench
+
+В репозитории также есть [SkillBox Bench](benchmark/README.md) — отдельное локальное приложение для подключения моделей и MCP-серверов, просмотра tool-driven чатов и воспроизводимых парных сравнений Baseline / With Skill. У Benchmark собственная SQLite и отдельный локальный YAML с горячим применением подключений.
+
+```bash
+make benchmark
+./skillbox-bench -config ./benchmark/config.yaml
+```
+
 ## Архитектура
 
 ```text
                                       ┌──────────────────────────────┐
 Browser ── GET / ────────────────────>│                              │
-Browser ── GET /admin/api/* ─────────>│       SkillBox binary        │──> SQLite
-Teacher ── POST /mcp/{project}/teacher│                              │──> MySQL
-Student ── POST /mcp/{project} ──────>│  Go API + embedded Dashboard │──> PostgreSQL
+Browser ── GET /admin/api/* ─────────>│       SkillBox binary        │──> Filesystem packages
+Teacher ── POST /mcp/{project}/teacher│                              │──> SQL runtime/index
+Student ── POST /mcp/{project} ──────>│  Go API + embedded Dashboard │
                                       └──────────────────────────────┘
 ```
 
@@ -77,6 +87,14 @@ Student ── POST /mcp/{project} ──────>│  Go API + embedded Das
 | `POST /mcp/{project_id}/teacher` | Teacher | Создание, проверка, публикация, аналитика и rollback |
 
 Dashboard видит всю базу, но MCP-клиенты остаются изолированными по проектам.
+
+Содержимое Skills находится в проверенных каталогах внутри `skills.directory`;
+SQL служит индексом и хранит lifecycle, review, execution и analytics state.
+В корне package обязателен `SKILL.md`; дополнительно допускаются `scripts/`,
+`references/`, `assets/` и другие переносимые файлы. SkillBox хранит, хеширует,
+сканирует, версионирует, импортирует и экспортирует эти файлы, но **никогда не
+выполняет импортированный код**. См. [Architecture](docs/ARCHITECTURE.md#skill-storage-and-package-format)
+и [Deployment](docs/DEPLOYMENT.md#importing-skill-packages).
 
 ## Быстрый запуск
 
@@ -90,6 +108,25 @@ cd SkillBox
 make build
 ./skillbox -config ./configs/skillbox.yaml
 ```
+
+Если существующая база всё ещё содержит Skills только в БД, остановите сервис,
+создайте резервную копию базы и `skills.directory`, затем выполните повторяемую
+одноразовую миграцию перед обычным запуском:
+
+```bash
+./skillbox -config ./configs/skillbox.yaml -migrate-legacy-skills
+```
+
+ID Skills, lifecycle, история версий и execution evidence сохраняются.
+Подробности — в [Deployment](docs/DEPLOYMENT.md#migrating-legacy-db-only-skills).
+
+Portable Skills также можно импортировать из локального каталога, ZIP-архива
+или Git-репозитория соответствующей командой `-import-skill-*`. До сохранения
+package полностью валидируется, а его код никогда не выполняется. Подробности —
+в [Importing Skill packages](docs/DEPLOYMENT.md#importing-skill-packages).
+
+Package можно экспортировать целиком как каталог или ZIP без открытия базы
+SkillBox. Подробности — в [Exporting Skill packages](docs/DEPLOYMENT.md#exporting-skill-packages).
 
 Откройте [http://127.0.0.1:8081](http://127.0.0.1:8081).
 
@@ -154,12 +191,16 @@ database:
   driver: sqlite # sqlite, mysql, postgres
   path: ./data/skillbox.db
   dsn: ""
+
+skills:
+  directory: ./data/skills
 ```
 
 - SQLite использует `path`.
 - MySQL и PostgreSQL используют `dsn`.
 - Миграции выполняются автоматически при запуске.
 - Относительный путь SQLite считается от рабочей директории процесса.
+- Относительный путь к Skill packages считается от рабочей директории процесса.
 
 `address: ":8081"` слушает все сетевые интерфейсы. Для локального использования оставляйте `127.0.0.1:8081`.
 
@@ -170,12 +211,16 @@ database:
 ./build-release.sh all  # macOS/Linux, ARM64/AMD64
 ```
 
-Каждый релиз содержит один исполняемый файл, конфигурацию и документацию:
+Каждый релиз содержит исполняемые файлы сервера SkillBox и SkillBox Bench, примеры конфигурации и документацию:
 
 ```text
 release/<os>/<arch>/SkillBox/
 ├── SkillBox
+├── skillbox-bench
 ├── configs/skillbox.yaml
+├── benchmark/
+│   ├── config.example.yaml
+│   └── README.md
 ├── docs/
 └── README.md
 ```
@@ -198,6 +243,7 @@ SkillBox уже работает, но остаётся ранним open-source
 | [MCP contract](docs/MCP.md) | Маршруты, роли, инструменты и JSON-RPC |
 | [Skill model](docs/SKILL_MODEL.md) | Scope, структура, версии и компиляция |
 | [Dashboard](docs/DASHBOARD.md) | Встроенная админ-панель |
+| [Benchmarks](docs/BENCHMARKS.md) | Парная методика Baseline / With Skill и сохраняемые доказательства |
 | [Architecture](docs/ARCHITECTURE.md) | Пакеты, границы доверия и сборка |
 | [Database](docs/DATABASE.md) | Схема, драйверы, миграции и backup |
 | [Deployment](docs/DEPLOYMENT.md) | Локальный запуск, release и Docker |

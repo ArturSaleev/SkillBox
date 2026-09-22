@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Scope string
 
@@ -94,35 +97,38 @@ type Example struct {
 }
 
 type Skill struct {
-	ID              string               `json:"id"`
-	WorkspaceID     *string              `json:"workspace_id,omitempty"`
-	ProjectID       *string              `json:"project_id,omitempty"`
-	Slug            string               `json:"slug"`
-	Name            string               `json:"name"`
-	Description     string               `json:"description"`
-	Purpose         string               `json:"purpose"`
-	WhenToUse       string               `json:"when_to_use"`
-	WhenNotToUse    string               `json:"when_not_to_use,omitempty"`
-	Instructions    string               `json:"instructions"`
-	SuccessCriteria []string             `json:"success_criteria"`
-	Scope           Scope                `json:"scope"`
-	Status          SkillStatus          `json:"status"`
-	Priority        int                  `json:"priority"`
-	CurrentVersion  int                  `json:"current_version"`
-	Domains         []string             `json:"domains"`
-	Intents         []string             `json:"intents"`
-	ObjectTypes     []string             `json:"object_types"`
-	Tags            []string             `json:"tags"`
-	Keywords        []string             `json:"keywords"`
-	Capabilities    []string             `json:"capabilities"`
-	Compatibility   []string             `json:"compatibility"`
-	Steps           []Step               `json:"steps"`
-	Tools           []ToolRequirement    `json:"tools"`
-	Contexts        []ContextRequirement `json:"context_requirements"`
-	Dependencies    []Dependency         `json:"dependencies"`
-	Examples        []Example            `json:"examples"`
-	CreatedAt       time.Time            `json:"created_at"`
-	UpdatedAt       time.Time            `json:"updated_at"`
+	ID               string               `json:"id"`
+	WorkspaceID      *string              `json:"workspace_id,omitempty"`
+	ProjectID        *string              `json:"project_id,omitempty"`
+	Slug             string               `json:"slug"`
+	Name             string               `json:"name"`
+	Description      string               `json:"description"`
+	Purpose          string               `json:"purpose"`
+	WhenToUse        string               `json:"when_to_use"`
+	WhenNotToUse     string               `json:"when_not_to_use,omitempty"`
+	Instructions     string               `json:"instructions"`
+	SuccessCriteria  []string             `json:"success_criteria"`
+	Scope            Scope                `json:"scope"`
+	Status           SkillStatus          `json:"status"`
+	Priority         int                  `json:"priority"`
+	CurrentVersion   int                  `json:"current_version"`
+	PackagePath      string               `json:"package_path,omitempty"`
+	PackageHash      string               `json:"package_hash,omitempty"`
+	PackageIndexedAt *time.Time           `json:"package_indexed_at,omitempty"`
+	Domains          []string             `json:"domains"`
+	Intents          []string             `json:"intents"`
+	ObjectTypes      []string             `json:"object_types"`
+	Tags             []string             `json:"tags"`
+	Keywords         []string             `json:"keywords"`
+	Capabilities     []string             `json:"capabilities"`
+	Compatibility    []string             `json:"compatibility"`
+	Steps            []Step               `json:"steps"`
+	Tools            []ToolRequirement    `json:"tools"`
+	Contexts         []ContextRequirement `json:"context_requirements"`
+	Dependencies     []Dependency         `json:"dependencies"`
+	Examples         []Example            `json:"examples"`
+	CreatedAt        time.Time            `json:"created_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
 }
 
 type SkillVersion struct {
@@ -130,9 +136,23 @@ type SkillVersion struct {
 	SkillID       string    `json:"skill_id"`
 	Version       int       `json:"version"`
 	Snapshot      string    `json:"snapshot,omitempty"`
+	PackageHash   string    `json:"package_hash,omitempty"`
 	ChangeSummary string    `json:"change_summary"`
 	CreatedBy     *string   `json:"created_by,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type SecurityReview struct {
+	ID             string          `json:"id"`
+	SkillID        string          `json:"skill_id"`
+	PackageHash    string          `json:"package_hash"`
+	Provider       string          `json:"provider"`
+	Model          string          `json:"model"`
+	Summary        string          `json:"summary"`
+	Findings       json.RawMessage `json:"findings"`
+	Recommendation string          `json:"recommendation"`
+	Outdated       bool            `json:"outdated"`
+	ReviewedAt     time.Time       `json:"reviewed_at"`
 }
 
 type Execution struct {

@@ -11,6 +11,8 @@ export function useExecutions(skillId?: string, refetchInterval?: number) { retu
 export function useStatistics(skillId: string) { return useQuery({ queryKey: ["statistics", skillId], queryFn: () => api.getStatistics(skillId), enabled: Boolean(skillId), staleTime: 300_000 }); }
 export function useSearchSkills(filter: SearchFilter) { return useSkills(filter); }
 export function useProposals(skillId?: string) { return useQuery({ queryKey: ["proposals", skillId], queryFn: () => api.listProposals(skillId), staleTime: 30_000 }); }
+export function useCodeReviewConfig() { return useQuery({ queryKey: ["code-review-config"], queryFn: () => api.getCodeReviewConfig(), staleTime: 300_000 }); }
+export function useSecurityReviews(skillId: string) { return useQuery({ queryKey: ["security-reviews", skillId], queryFn: () => api.listSecurityReviews(skillId), enabled: Boolean(skillId), staleTime: 30_000 }); }
 export function useSaveSkill() {
   const queryClient = useQueryClient();
   return useMutation({

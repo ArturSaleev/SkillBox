@@ -36,6 +36,11 @@ type SkillVersionRepository interface {
 	RollbackSkill(context.Context, string, int, *string) (*domain.Skill, error)
 }
 
+type SecurityReviewRepository interface {
+	CreateSecurityReview(context.Context, *domain.SecurityReview) error
+	ListSecurityReviews(context.Context, string) ([]domain.SecurityReview, error)
+}
+
 type ExecutionRepository interface {
 	CreateExecution(context.Context, *domain.Execution) error
 	ListExecutions(context.Context, *string) ([]domain.Execution, error)

@@ -87,6 +87,19 @@ Successful `tools/call` responses contain both MCP text content and typed struct
 
 Dashboard code reads `structuredContent`; agents may use the normal MCP content representation.
 
+## Filesystem preparation and progressive disclosure
+
+`prepare_skill` keeps the existing request and response contract. For a
+filesystem-backed Skill, it loads the current `SKILL.md` at call time, then the
+compiler returns only instructions and structured frontmatter fields already
+represented by `compiled_skill`.
+
+Package files under `scripts/`, `references/`, and `assets/` are not appended to
+the MCP response. Their contents therefore do not consume the model context or
+leave the machine merely because a Skill was prepared. A procedure can instead
+describe which specific local resource an agent should inspect when it becomes
+necessary.
+
 ## Dashboard use
 
 The embedded Dashboard reads database-wide administrative views from the same-origin `/admin/api`. For validation, authoring, proposals, publication, rollback, and compiled preview it selects `/mcp/{project_id}/teacher` or `/mcp/{project_id}` from the Skill's owning project. Scoped MCP clients initialize independently and retry initialization after a failed attempt.

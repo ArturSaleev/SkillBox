@@ -6,12 +6,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/aibox/skillbox/internal/application"
 	"github.com/aibox/skillbox/internal/domain"
 	"github.com/aibox/skillbox/internal/ports"
+	skillstore "github.com/aibox/skillbox/internal/skills/store"
+	"github.com/aibox/skillbox/internal/storage/sqlite"
 	mcptransport "github.com/aibox/skillbox/internal/transport/mcp"
 	"github.com/go-chi/chi/v5"
 )
@@ -30,6 +35,83 @@ func localMCP(t *testing.T) (ports.Storage, *httptest.Server) {
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	return store, server
+}
+
+func TestMCPPrepareReadsFilesystemPackageWithoutEmbeddingAttachments(t *testing.T) {
+	ctx := context.Background()
+	index, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "skillbox.db"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	skillsRoot := filepath.Join(t.TempDir(), "skills")
+	store := skillstore.New(index, skillsRoot)
+	workspace, err := store.EnsureWorkspace(ctx, "local", "Local Workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.EnsureProject(ctx, workspace.ID, "filesystem-project", "Filesystem Project")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	skill := sampleSkill("filesystem-skill")
+	skill.Scope, skill.WorkspaceID, skill.ProjectID = domain.ScopeProject, &workspace.ID, &project.ID
+	if err = store.CreateSkill(ctx, &skill, "initial", nil); err != nil {
+		t.Fatal(err)
+	}
+	packageRoot := filepath.Join(skillsRoot, skill.PackagePath)
+	skillFile := filepath.Join(packageRoot, "SKILL.md")
+	raw, err := os.ReadFile(skillFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = []byte(strings.Replace(string(raw), skill.Instructions, "FILESYSTEM_INSTRUCTIONS_LIVE\n", 1))
+	if err = os.WriteFile(skillFile, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attachments := map[string]string{
+		"scripts/check.sh":      "SCRIPT_SECRET_MARKER",
+		"references/private.md": "REFERENCE_SECRET_MARKER",
+		"assets/sample.txt":     "ASSET_SECRET_MARKER",
+	}
+	for name, content := range attachments {
+		path := filepath.Join(packageRoot, filepath.FromSlash(name))
+		if err = os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	handler := mcptransport.New(application.New(store), mcptransport.NewLocalResolver(store, workspace.ID))
+	router := chi.NewRouter()
+	router.Handle("/mcp/{project}", handler)
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	url := server.URL + "/mcp/filesystem-project"
+	if out := initialize(t, url); out["error"] != nil {
+		t.Fatalf("initialize=%#v", out)
+	}
+	call := mustJSON(t, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": domain.ToolPrepareSkill, "arguments": map[string]any{"task": "prepare filesystem skill", "skill_id": skill.ID}},
+	})
+	prepared := toolResult(t, rpcClient(t, url)("", call))
+	compiled := prepared["compiled_skill"].(map[string]any)
+	if instructions, _ := compiled["instructions"].(string); !strings.Contains(instructions, "FILESYSTEM_INSTRUCTIONS_LIVE") {
+		t.Fatalf("skill_prepare did not read live SKILL.md: %#v", compiled)
+	}
+	encoded, err := json.Marshal(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"SCRIPT_SECRET_MARKER", "REFERENCE_SECRET_MARKER", "ASSET_SECRET_MARKER"} {
+		if bytes.Contains(encoded, []byte(marker)) {
+			t.Fatalf("attachment content leaked into skill_prepare response: %s", marker)
+		}
+	}
 }
 
 func initialize(t *testing.T, url string) map[string]any {

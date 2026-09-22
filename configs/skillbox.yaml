@@ -1,7 +1,16 @@
 server:
   address: ":8081"
 
+skills:
+  directory: ./data/skills
+
 database:
   driver: sqlite # sqlite, mysql, postgres
   path: ./data/skillbox.db
   dsn: ""
+
+code_review:
+  provider: ""
+  endpoint: ""
+  model: ""
+  api_key_env: ""

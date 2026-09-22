@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS security_reviews (id VARCHAR(36) PRIMARY KEY, skill_id VARCHAR(36) NOT NULL REFERENCES skills(id) ON DELETE CASCADE, package_hash VARCHAR(128) NOT NULL, provider VARCHAR(64) NOT NULL, model VARCHAR(191) NOT NULL, summary TEXT NOT NULL DEFAULT '', findings TEXT NOT NULL DEFAULT '[]', recommendation TEXT NOT NULL DEFAULT '', outdated BOOLEAN NOT NULL DEFAULT FALSE, reviewed_at VARCHAR(40) NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_security_reviews_skill_time ON security_reviews(skill_id, reviewed_at DESC);

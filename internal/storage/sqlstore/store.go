@@ -222,6 +222,111 @@ func (s *Store) CreateSkill(ctx context.Context, skill *domain.Skill, summary st
 	return tx.Commit()
 }
 
+// CreateSkillIndex creates a searchable Skill row without manufacturing
+// version history. It is used by filesystem discovery when rebuilding a lost
+// runtime database from packages.
+func (s *Store) CreateSkillIndex(ctx context.Context, skill *domain.Skill) error {
+	if skill.ID == "" {
+		skill.ID = uuid.NewString()
+	}
+	if skill.CurrentVersion == 0 {
+		skill.CurrentVersion = 1
+	}
+	if skill.CreatedAt.IsZero() {
+		skill.CreatedAt = now()
+	}
+	if skill.UpdatedAt.IsZero() {
+		skill.UpdatedAt = skill.CreatedAt
+	}
+	if err := skill.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.writeSkill(ctx, tx, skill, false); err != nil {
+		return err
+	}
+	if err = s.writeRelations(ctx, tx, skill); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SyncSkillIndex refreshes filesystem-derived fields without changing the
+// lifecycle version or appending history on every process start.
+func (s *Store) SyncSkillIndex(ctx context.Context, skill *domain.Skill) error {
+	if err := skill.Validate(); err != nil {
+		return err
+	}
+	if skill.UpdatedAt.IsZero() {
+		skill.UpdatedAt = now()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.writeSkill(ctx, tx, skill, true); err != nil {
+		return err
+	}
+	if err = s.clearRelations(ctx, tx, skill.ID); err != nil {
+		return err
+	}
+	if err = s.writeRelations(ctx, tx, skill); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RecordSkillVersion records one already-materialized filesystem package
+// version without changing the current lifecycle version.
+func (s *Store) RecordSkillVersion(ctx context.Context, skill *domain.Skill, summary string, actor *string) error {
+	raw, err := json.Marshal(skill)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO skill_versions(id,skill_id,version,snapshot,package_hash,change_summary,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)`), uuid.NewString(), skill.ID, skill.CurrentVersion, string(raw), nullString(skill.PackageHash), summary, actor, ts(now()))
+	return err
+}
+
+// ApplyLegacySkillMigration switches one DB-only Skill to a filesystem package
+// and attaches package hashes to its existing version rows in one transaction.
+// Execution evidence and lifecycle records are deliberately left untouched.
+func (s *Store) ApplyLegacySkillMigration(ctx context.Context, skill *domain.Skill, versionHashes map[int]string) error {
+	if err := skill.Validate(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.writeSkill(ctx, tx, skill, true); err != nil {
+		return err
+	}
+	if err = s.clearRelations(ctx, tx, skill.ID); err != nil {
+		return err
+	}
+	if err = s.writeRelations(ctx, tx, skill); err != nil {
+		return err
+	}
+	for version, hash := range versionHashes {
+		result, updateErr := tx.ExecContext(ctx, s.q(`UPDATE skill_versions SET package_hash=? WHERE skill_id=? AND version=?`), hash, skill.ID, version)
+		if updateErr != nil {
+			return updateErr
+		}
+		if affected, rowsErr := result.RowsAffected(); rowsErr != nil {
+			return rowsErr
+		} else if affected != 1 {
+			return fmt.Errorf("legacy Skill %s version %d was not found", skill.ID, version)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) UpdateSkill(ctx context.Context, skill *domain.Skill, summary string, actor *string) error {
 	if err := skill.Validate(); err != nil {
 		return err
@@ -255,10 +360,14 @@ func (s *Store) UpdateSkill(ctx context.Context, skill *domain.Skill, summary st
 
 func (s *Store) writeSkill(ctx context.Context, tx *sql.Tx, sk *domain.Skill, update bool) error {
 	criteria, _ := json.Marshal(sk.SuccessCriteria)
-	args := []any{sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.UpdatedAt)}
+	var indexedAt any
+	if sk.PackageIndexedAt != nil {
+		indexedAt = ts(*sk.PackageIndexedAt)
+	}
+	args := []any{sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, nullString(sk.PackagePath), nullString(sk.PackageHash), indexedAt, ts(sk.UpdatedAt)}
 	if update {
 		args = append(args, sk.ID)
-		res, err := tx.ExecContext(ctx, s.q(`UPDATE skills SET workspace_id=?,project_id=?,slug=?,name=?,description=?,purpose=?,when_to_use=?,when_not_to_use=?,instructions=?,success_criteria=?,scope=?,status=?,priority=?,current_version=?,updated_at=? WHERE id=?`), args...)
+		res, err := tx.ExecContext(ctx, s.q(`UPDATE skills SET workspace_id=?,project_id=?,slug=?,name=?,description=?,purpose=?,when_to_use=?,when_not_to_use=?,instructions=?,success_criteria=?,scope=?,status=?,priority=?,current_version=?,package_path=?,package_hash=?,package_indexed_at=?,updated_at=? WHERE id=?`), args...)
 		if err != nil {
 			return err
 		}
@@ -266,11 +375,58 @@ func (s *Store) writeSkill(ctx context.Context, tx *sql.Tx, sk *domain.Skill, up
 		if n == 0 {
 			return ports.ErrNotFound
 		}
-		return nil
+		_, err = tx.ExecContext(ctx, s.q(`UPDATE security_reviews SET outdated=CASE WHEN package_hash=? THEN ? ELSE ? END WHERE skill_id=?`), sk.PackageHash, false, true, sk.ID)
+		return err
 	}
-	args = []any{sk.ID, sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, ts(sk.CreatedAt), ts(sk.UpdatedAt)}
-	_, err := tx.ExecContext(ctx, s.q(`INSERT INTO skills(id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), args...)
+	args = []any{sk.ID, sk.WorkspaceID, sk.ProjectID, sk.Slug, sk.Name, sk.Description, sk.Purpose, sk.WhenToUse, sk.WhenNotToUse, sk.Instructions, string(criteria), sk.Scope, sk.Status, sk.Priority, sk.CurrentVersion, nullString(sk.PackagePath), nullString(sk.PackageHash), indexedAt, ts(sk.CreatedAt), ts(sk.UpdatedAt)}
+	_, err := tx.ExecContext(ctx, s.q(`INSERT INTO skills(id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,package_path,package_hash,package_indexed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), args...)
 	return err
+}
+
+func (s *Store) CreateSecurityReview(ctx context.Context, review *domain.SecurityReview) error {
+	if review.SkillID == "" || review.PackageHash == "" || review.Provider == "" || review.Model == "" {
+		return errors.New("skill ID, package hash, provider, and model are required")
+	}
+	if review.ID == "" {
+		review.ID = uuid.NewString()
+	}
+	if review.ReviewedAt.IsZero() {
+		review.ReviewedAt = now()
+	}
+	if len(review.Findings) == 0 {
+		review.Findings = json.RawMessage(`[]`)
+	}
+	var currentHash sql.NullString
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT package_hash FROM skills WHERE id=?`), review.SkillID).Scan(&currentHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ports.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	review.Outdated = !currentHash.Valid || currentHash.String != review.PackageHash
+	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO security_reviews(id,skill_id,package_hash,provider,model,summary,findings,recommendation,outdated,reviewed_at) VALUES(?,?,?,?,?,?,?,?,?,?)`), review.ID, review.SkillID, review.PackageHash, review.Provider, review.Model, review.Summary, string(review.Findings), review.Recommendation, review.Outdated, ts(review.ReviewedAt))
+	return err
+}
+
+func (s *Store) ListSecurityReviews(ctx context.Context, skillID string) ([]domain.SecurityReview, error) {
+	rows, err := s.db.QueryContext(ctx, s.q(`SELECT id,skill_id,package_hash,provider,model,summary,findings,recommendation,outdated,reviewed_at FROM security_reviews WHERE skill_id=? ORDER BY reviewed_at DESC`), skillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var reviews []domain.SecurityReview
+	for rows.Next() {
+		var review domain.SecurityReview
+		var findings, reviewedAt string
+		if err = rows.Scan(&review.ID, &review.SkillID, &review.PackageHash, &review.Provider, &review.Model, &review.Summary, &findings, &review.Recommendation, &review.Outdated, &reviewedAt); err != nil {
+			return nil, err
+		}
+		review.Findings = json.RawMessage(findings)
+		review.ReviewedAt = parseTime(reviewedAt)
+		reviews = append(reviews, review)
+	}
+	return reviews, rows.Err()
 }
 
 func (s *Store) writeRelations(ctx context.Context, tx *sql.Tx, sk *domain.Skill) error {
@@ -364,12 +520,12 @@ func (s *Store) snapshot(ctx context.Context, tx *sql.Tx, sk *domain.Skill, summ
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, s.q(`INSERT INTO skill_versions(id,skill_id,version,snapshot,change_summary,created_by,created_at) VALUES(?,?,?,?,?,?,?)`), uuid.NewString(), sk.ID, sk.CurrentVersion, string(raw), summary, actor, ts(now()))
+	_, err = tx.ExecContext(ctx, s.q(`INSERT INTO skill_versions(id,skill_id,version,snapshot,package_hash,change_summary,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)`), uuid.NewString(), sk.ID, sk.CurrentVersion, string(raw), nullString(sk.PackageHash), summary, actor, ts(now()))
 	return err
 }
 
 func (s *Store) GetSkill(ctx context.Context, id string) (*domain.Skill, error) {
-	row := s.db.QueryRowContext(ctx, s.q(`SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills WHERE id=?`), id)
+	row := s.db.QueryRowContext(ctx, s.q(`SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,package_path,package_hash,package_indexed_at,created_at,updated_at FROM skills WHERE id=?`), id)
 	sk, err := scanSkill(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -387,9 +543,9 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanSkill(row rowScanner) (*domain.Skill, error) {
 	var sk domain.Skill
-	var ws, pr sql.NullString
+	var ws, pr, packagePath, packageHash, indexedAt sql.NullString
 	var criteria, created, updated string
-	err := row.Scan(&sk.ID, &ws, &pr, &sk.Slug, &sk.Name, &sk.Description, &sk.Purpose, &sk.WhenToUse, &sk.WhenNotToUse, &sk.Instructions, &criteria, &sk.Scope, &sk.Status, &sk.Priority, &sk.CurrentVersion, &created, &updated)
+	err := row.Scan(&sk.ID, &ws, &pr, &sk.Slug, &sk.Name, &sk.Description, &sk.Purpose, &sk.WhenToUse, &sk.WhenNotToUse, &sk.Instructions, &criteria, &sk.Scope, &sk.Status, &sk.Priority, &sk.CurrentVersion, &packagePath, &packageHash, &indexedAt, &created, &updated)
 	if err != nil {
 		return nil, err
 	}
@@ -400,12 +556,17 @@ func scanSkill(row rowScanner) (*domain.Skill, error) {
 		sk.ProjectID = &pr.String
 	}
 	_ = json.Unmarshal([]byte(criteria), &sk.SuccessCriteria)
+	sk.PackagePath, sk.PackageHash = packagePath.String, packageHash.String
+	if indexedAt.Valid {
+		t := parseTime(indexedAt.String)
+		sk.PackageIndexedAt = &t
+	}
 	sk.CreatedAt, sk.UpdatedAt = parseTime(created), parseTime(updated)
 	return &sk, nil
 }
 
 func (s *Store) ListSkills(ctx context.Context) ([]domain.Skill, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,created_at,updated_at FROM skills`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,workspace_id,project_id,slug,name,description,purpose,when_to_use,when_not_to_use,instructions,success_criteria,scope,status,priority,current_version,package_path,package_hash,package_indexed_at,created_at,updated_at FROM skills`)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +722,7 @@ func (s *Store) loadRelations(ctx context.Context, sk *domain.Skill) error {
 }
 
 func (s *Store) ListVersions(ctx context.Context, id string) ([]domain.SkillVersion, error) {
-	rows, err := s.db.QueryContext(ctx, s.q(`SELECT id,skill_id,version,change_summary,created_by,created_at FROM skill_versions WHERE skill_id=? ORDER BY version DESC`), id)
+	rows, err := s.db.QueryContext(ctx, s.q(`SELECT id,skill_id,version,package_hash,change_summary,created_by,created_at FROM skill_versions WHERE skill_id=? ORDER BY version DESC`), id)
 	if err != nil {
 		return nil, err
 	}
@@ -569,14 +730,15 @@ func (s *Store) ListVersions(ctx context.Context, id string) ([]domain.SkillVers
 	var out []domain.SkillVersion
 	for rows.Next() {
 		var v domain.SkillVersion
-		var actor sql.NullString
+		var actor, packageHash sql.NullString
 		var c string
-		if err := rows.Scan(&v.ID, &v.SkillID, &v.Version, &v.ChangeSummary, &actor, &c); err != nil {
+		if err := rows.Scan(&v.ID, &v.SkillID, &v.Version, &packageHash, &v.ChangeSummary, &actor, &c); err != nil {
 			return nil, err
 		}
 		if actor.Valid {
 			v.CreatedBy = &actor.String
 		}
+		v.PackageHash = packageHash.String
 		v.CreatedAt = parseTime(c)
 		out = append(out, v)
 	}
@@ -584,9 +746,9 @@ func (s *Store) ListVersions(ctx context.Context, id string) ([]domain.SkillVers
 }
 func (s *Store) GetVersion(ctx context.Context, id string, version int) (*domain.SkillVersion, error) {
 	var v domain.SkillVersion
-	var actor sql.NullString
+	var actor, packageHash sql.NullString
 	var c string
-	err := s.db.QueryRowContext(ctx, s.q(`SELECT id,skill_id,version,snapshot,change_summary,created_by,created_at FROM skill_versions WHERE skill_id=? AND version=?`), id, version).Scan(&v.ID, &v.SkillID, &v.Version, &v.Snapshot, &v.ChangeSummary, &actor, &c)
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT id,skill_id,version,snapshot,package_hash,change_summary,created_by,created_at FROM skill_versions WHERE skill_id=? AND version=?`), id, version).Scan(&v.ID, &v.SkillID, &v.Version, &v.Snapshot, &packageHash, &v.ChangeSummary, &actor, &c)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ports.ErrNotFound
 	}
@@ -596,6 +758,7 @@ func (s *Store) GetVersion(ctx context.Context, id string, version int) (*domain
 	if actor.Valid {
 		v.CreatedBy = &actor.String
 	}
+	v.PackageHash = packageHash.String
 	v.CreatedAt = parseTime(c)
 	return &v, nil
 }

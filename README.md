@@ -46,6 +46,7 @@ This is especially useful for local and smaller models, where concise, explicit 
 - **Structured procedures** — ordered steps, context requirements, tools, dependencies, examples, and success criteria.
 - **Execution evidence** — record success, failure, model information, duration, tool calls, and trajectories.
 - **Database choice** — SQLite, MySQL, or PostgreSQL.
+- **Filesystem-authoritative Skills** — portable packages hold Skill contents; SQL keeps the index, lifecycle, runtime state, and history.
 - **Embedded admin panel** — every project and Skill can be managed from the browser.
 - **One production binary** — the static Next.js Dashboard is embedded in the Go executable.
 - **Portable releases** — macOS and Linux builds for ARM64 and AMD64.
@@ -60,14 +61,23 @@ This is especially useful for local and smaller models, where concise, explicit 
 
 *A searchable Skills library across every MCP project, with project, status, and scope filters.*
 
+## SkillBox Bench
+
+The repository also includes [SkillBox Bench](benchmark/README.md): a separate local application for connecting models and MCP servers, inspecting tool-driven chats, and running reproducible paired Baseline / With Skill evaluations. It uses an independent SQLite database and a git-ignored, hot-editable YAML connection file.
+
+```bash
+make benchmark
+./skillbox-bench -config ./benchmark/config.yaml
+```
+
 ## Architecture
 
 ```text
                                       ┌──────────────────────────────┐
 Browser ── GET / ────────────────────>│                              │
-Browser ── GET /admin/api/* ─────────>│       SkillBox binary        │──> SQLite
-Teacher ── POST /mcp/{project}/teacher│                              │──> MySQL
-Student ── POST /mcp/{project} ──────>│  Go API + embedded Dashboard │──> PostgreSQL
+Browser ── GET /admin/api/* ─────────>│       SkillBox binary        │──> Filesystem packages
+Teacher ── POST /mcp/{project}/teacher│                              │──> SQL runtime/index
+Student ── POST /mcp/{project} ──────>│  Go API + embedded Dashboard │
                                       └──────────────────────────────┘
 ```
 
@@ -79,6 +89,14 @@ The two agent-facing routes are:
 | `POST /mcp/{project_id}/teacher` | Teacher | Author, review, publish, inspect, and roll back Skills |
 
 The browser Dashboard is database-wide. MCP clients remain project-scoped.
+
+Skill contents live in validated directories under `skills.directory`; SQL is
+an index plus lifecycle, review, execution, and analytics state. A package has
+one root `SKILL.md` and may include `scripts/`, `references/`, `assets/`, and
+other portable files. SkillBox stores, hashes, scans, versions, imports, and
+exports those files, but **never executes imported code**. See
+[Architecture](docs/ARCHITECTURE.md#skill-storage-and-package-format) and
+[Deployment](docs/DEPLOYMENT.md#importing-skill-packages).
 
 ## Quick start
 
@@ -92,6 +110,25 @@ cd SkillBox
 make build
 ./skillbox -config ./configs/skillbox.yaml
 ```
+
+For an existing database that still contains DB-only Skills, stop the service,
+back up the database and `skills.directory`, then run the idempotent one-shot
+migration before normal startup:
+
+```bash
+./skillbox -config ./configs/skillbox.yaml -migrate-legacy-skills
+```
+
+Skill IDs, lifecycle state, version history, and execution evidence are
+preserved. See [Deployment](docs/DEPLOYMENT.md#migrating-legacy-db-only-skills).
+
+Portable Skills can also be imported from a local directory, ZIP archive, or
+Git repository with the corresponding `-import-skill-*` command. Imports are
+validated before commit and never execute package code. See
+[Importing Skill packages](docs/DEPLOYMENT.md#importing-skill-packages).
+
+Packages can be exported as a complete directory or ZIP without opening the
+SkillBox database. See [Exporting Skill packages](docs/DEPLOYMENT.md#exporting-skill-packages).
 
 Open [http://127.0.0.1:8081](http://127.0.0.1:8081).
 
@@ -158,12 +195,16 @@ database:
   driver: sqlite # sqlite, mysql, postgres
   path: ./data/skillbox.db
   dsn: ""
+
+skills:
+  directory: ./data/skills
 ```
 
 - SQLite uses `path`.
 - MySQL and PostgreSQL use `dsn`.
 - Migrations run automatically at startup.
 - Relative SQLite paths are resolved from the process working directory.
+- Relative Skill package paths are resolved from the process working directory.
 
 `address: ":8081"` listens on every network interface. Keep `127.0.0.1:8081` for local-only use.
 
@@ -174,12 +215,16 @@ database:
 ./build-release.sh all  # macOS/Linux, ARM64/AMD64
 ```
 
-Each release contains one executable plus configuration and documentation:
+Each release contains both the SkillBox server and SkillBox Bench executables, plus configuration examples and documentation:
 
 ```text
 release/<os>/<arch>/SkillBox/
 ├── SkillBox
+├── skillbox-bench
 ├── configs/skillbox.yaml
+├── benchmark/
+│   ├── config.example.yaml
+│   └── README.md
 ├── docs/
 └── README.md
 ```
@@ -202,6 +247,7 @@ See the [Roadmap](ROADMAP.md) for planned work and [Security Policy](SECURITY.md
 | [MCP contract](docs/MCP.md) | Routes, roles, tools, and JSON-RPC envelopes |
 | [Skill model](docs/SKILL_MODEL.md) | Scope, structured content, versions, and compilation |
 | [Dashboard](docs/DASHBOARD.md) | Embedded admin panel and authoring behavior |
+| [Benchmarks](docs/BENCHMARKS.md) | Paired Baseline / With Skill methodology and evidence |
 | [Architecture](docs/ARCHITECTURE.md) | Packages, trust boundaries, and build pipeline |
 | [Database](docs/DATABASE.md) | Schema, drivers, migrations, and backups |
 | [Deployment](docs/DEPLOYMENT.md) | Local, release, Docker, and network deployment |
