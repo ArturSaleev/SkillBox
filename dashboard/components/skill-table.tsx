@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { type ColumnDef, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, type SortingState, useReactTable } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Eye, Pencil } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, Download, Eye, Pencil } from "lucide-react";
+import { api } from "@/lib/api-client";
 import type { Skill } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ export function SkillTable({ skills, query = "" }: { skills: Skill[]; query?: st
     { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     { accessorKey: "scope", header: "Scope" },
     { accessorKey: "current_version", header: "Version", cell: ({ row }) => `v${row.original.current_version}` },
-    { id: "actions", header: "", cell: ({ row }) => <div className="flex justify-end gap-1"><Link className={cn("inline-flex size-10 items-center justify-center rounded-xl hover:bg-muted")} title="View" href={`/skills/view?id=${encodeURIComponent(row.original.id)}`}><Eye className="size-4" /></Link><Link className={cn("inline-flex size-10 items-center justify-center rounded-xl hover:bg-muted")} title="Edit" href={`/editor?id=${encodeURIComponent(row.original.id)}`}><Pencil className="size-4" /></Link></div> }
+    { id: "actions", header: "", cell: ({ row }) => <div className="flex justify-end gap-1"><a className={cn("inline-flex size-10 items-center justify-center rounded-xl hover:bg-muted")} title="Export ZIP" href={api.exportURL(row.original.id)} download><Download className="size-4" /></a><Link className={cn("inline-flex size-10 items-center justify-center rounded-xl hover:bg-muted")} title="View" href={`/skills/view?id=${encodeURIComponent(row.original.id)}`}><Eye className="size-4" /></Link><Link className={cn("inline-flex size-10 items-center justify-center rounded-xl hover:bg-muted")} title="Edit" href={`/editor?id=${encodeURIComponent(row.original.id)}`}><Pencil className="size-4" /></Link></div> }
   ], []);
   const table = useReactTable({ data: skills, columns, state: { sorting, globalFilter: query }, onSortingChange: setSorting, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getFilteredRowModel: getFilteredRowModel(), getPaginationRowModel: getPaginationRowModel(), initialState: { pagination: { pageSize: 10 } } });
   return <div><Table><TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader><TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody></Table>

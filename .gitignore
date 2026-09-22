@@ -1,8 +1,16 @@
 /data/
 /skillbox
+/skillbox-bench
+
+# Local release bundles
 /release/
 *.log
 .DS_Store
+
+# SkillBox Bench local state and connection secrets
+/benchmark/config.yaml
+/benchmark/config.local.yaml
+/benchmark/data/
 
 # Local configuration and secrets
 .env

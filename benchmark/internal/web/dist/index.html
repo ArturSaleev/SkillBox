@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>SkillBox Bench</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">✦</div>
+        <div><strong>SkillBox Bench</strong><span>Model &amp; Skill Laboratory</span></div>
+      </div>
+      <nav class="primary-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="chat"><span>◌</span>Chat</button>
+        <button class="nav-item" data-view="connections"><span>⌁</span>Connections</button>
+        <button class="nav-item" data-view="benchmarks"><span>◇</span>Benchmarks</button>
+      </nav>
+      <div class="sidebar-section chat-history-section">
+        <div class="section-label"><span>Recent chats</span><button id="new-chat-small" title="New chat">＋</button></div>
+        <div id="session-list" class="session-list"></div>
+      </div>
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        <div><strong>Local runtime</strong><small id="runtime-status">Checking…</small></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><span class="eyebrow" id="view-eyebrow">MODEL WORKSPACE</span><h1 id="view-title">Chat laboratory</h1></div>
+        <div class="top-actions"><span class="local-badge">Local · secrets stay here</span><button class="icon-button" id="refresh-button" title="Refresh">↻</button></div>
+      </header>
+
+      <section id="chat-view" class="view active">
+        <div class="chat-layout">
+          <div class="chat-panel">
+            <div class="chat-toolbar">
+              <label>Provider<select id="chat-provider"></select></label>
+              <label>Model<div class="model-field"><input id="chat-model" list="model-options" placeholder="Select or enter model ID"><button id="load-models" title="Load models">↻</button></div></label>
+              <datalist id="model-options"></datalist>
+              <label>Mode<select id="chat-mode"><option value="no_skill">No Skill</option><option value="mcp_tools">MCP tools</option></select></label>
+              <button class="secondary-button" id="new-chat">New chat</button>
+            </div>
+            <div id="mcp-picker" class="mcp-picker"></div>
+            <div id="messages" class="messages">
+              <div class="empty-chat">
+                <div class="empty-icon">✦</div>
+                <h2>Compare ideas before benchmarks</h2>
+                <p>Select a model, attach MCP servers, and inspect every tool call. Conversations are stored only in the Benchmark SQLite database.</p>
+              </div>
+            </div>
+            <form id="composer" class="composer">
+              <textarea id="message-input" rows="2" placeholder="Ask the selected model to perform a task…" required></textarea>
+              <div class="composer-footer"><span id="composer-hint">Enter to send · Shift+Enter for a new line</span><button type="submit" class="primary-button" id="send-button">Send <span>↑</span></button></div>
+            </form>
+          </div>
+          <aside class="inspector">
+            <div class="inspector-head"><div><span class="eyebrow">RUN INSPECTOR</span><h2>Execution details</h2></div></div>
+            <div id="inspector-content" class="inspector-content">
+              <div class="inspector-empty"><span>⌁</span><p>Run a message to see latency, tokens, and MCP tool activity.</p></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="connections-view" class="view">
+        <div class="view-intro"><div><p>Manage model providers and MCP servers. Changes are written atomically and applied to new requests immediately.</p></div><div class="button-row"><button class="secondary-button" id="reload-config">Reload YAML</button><button class="primary-button" id="add-connection">＋ Add connection</button></div></div>
+        <div class="security-callout"><div class="callout-icon">⌾</div><div><strong>Secrets never return to the browser</strong><p>Keys are stored in the git-ignored YAML with file mode 0600. Empty secret fields preserve the current value.</p></div></div>
+        <section class="connection-section"><div class="section-heading"><div><span class="eyebrow">MODEL GATEWAYS</span><h2>Providers</h2></div><span id="provider-count" class="count-badge">0</span></div><div id="provider-grid" class="card-grid"></div></section>
+        <section class="connection-section"><div class="section-heading"><div><span class="eyebrow">TOOL &amp; DATA LAYER</span><h2>MCP servers</h2></div><span id="mcp-count" class="count-badge">0</span></div><div id="mcp-grid" class="card-grid"></div></section>
+        <section class="connection-section"><div class="section-heading"><div><span class="eyebrow">RUNTIME</span><h2>Runner settings</h2></div></div><div class="settings-card"><label>Maximum agent steps<input id="runner-max-steps" type="number" min="1" max="100"></label><label>Parallel benchmark jobs (reserved)<input id="runner-parallel" type="number" min="1" max="32"></label><button class="primary-button" id="save-runtime">Save &amp; apply</button></div></section>
+      </section>
+
+      <section id="benchmarks-view" class="view">
+        <div class="view-intro"><div><p>Run the same task on the same models and MCP tools. The paired variant changes only one thing: a frozen Skill prepared through Student MCP.</p></div><button class="primary-button" id="new-benchmark">＋ New benchmark</button></div>
+        <div class="benchmark-layout">
+          <aside class="benchmark-cases"><div class="section-heading"><div><span class="eyebrow">TEST DEFINITIONS</span><h2>Cases</h2></div><span id="case-count" class="count-badge">0</span></div><div id="benchmark-case-list" class="benchmark-case-list"></div></aside>
+          <section class="benchmark-results"><div id="benchmark-result-content" class="benchmark-result-content"><div class="benchmark-empty"><span>◇</span><h2>No benchmark selected</h2><p>Create a case with model targets, a published Skill, task MCP servers, and deterministic grading rules.</p></div></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="connection-dialog">
+    <form id="connection-form" method="dialog">
+      <div class="dialog-head"><div><span class="eyebrow">CONNECTION</span><h2 id="dialog-title">Add connection</h2></div><button type="button" class="icon-button" id="close-dialog">×</button></div>
+      <input type="hidden" id="connection-original-id">
+      <label>Connection type<select id="connection-kind"><option value="provider">Model provider</option><option value="mcp">MCP server</option></select></label>
+      <div class="form-grid"><label>ID<input id="connection-id" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}" placeholder="openrouter"></label><label>Name<input id="connection-name" required placeholder="OpenRouter"></label></div>
+      <label>Base URL<input id="connection-url" type="url" required placeholder="https://openrouter.ai/api/v1"></label>
+      <div id="provider-fields"><div class="form-grid"><label>Default model<input id="provider-model" placeholder="openrouter/free"></label><label>API key environment<input id="provider-key-env" placeholder="OPENROUTER_API_KEY"></label></div><label>API key<input id="provider-key" type="password" autocomplete="new-password" placeholder="Leave empty to preserve current key"></label></div>
+      <div id="mcp-fields" hidden><div class="form-grid"><label>Authorization header<input id="mcp-auth-header" placeholder="Authorization"></label><label>Authorization environment<input id="mcp-auth-env" placeholder="RAGBOX_API_TOKEN"></label></div><label>Authorization value<input id="mcp-auth-value" type="password" autocomplete="new-password" placeholder="Bearer … · leave empty to preserve"></label></div>
+      <div class="form-grid"><label>Request timeout<input id="connection-timeout" placeholder="120s"></label><label class="switch-label"><input id="connection-enabled" type="checkbox" checked><span>Enabled</span></label></div>
+      <div class="dialog-actions"><button type="button" class="danger-button" id="delete-connection" hidden>Remove</button><span></span><button type="button" class="secondary-button" id="cancel-dialog">Cancel</button><button type="submit" class="primary-button">Save &amp; apply</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="benchmark-dialog" class="wide-dialog">
+    <form id="benchmark-form" method="dialog">
+      <div class="dialog-head"><div><span class="eyebrow">PAIRED EXPERIMENT</span><h2 id="benchmark-dialog-title">New benchmark</h2></div><button type="button" class="icon-button" id="close-benchmark-dialog">×</button></div>
+      <input type="hidden" id="benchmark-id">
+      <div class="form-grid"><label>Name<input id="benchmark-name" required placeholder="Clinic service lookup"></label><label>Description<input id="benchmark-description" placeholder="What this case proves"></label></div>
+      <label>Task<textarea id="benchmark-task" rows="3" required placeholder="The exact request sent to every model and variant"></textarea></label>
+      <div class="form-grid"><label>SkillBox Student connection<select id="benchmark-skill-server" required></select></label><label>Published Skill ID<input id="benchmark-skill-id" required placeholder="UUID"></label></div>
+      <div class="form-grid"><label>Repetitions<input id="benchmark-repetitions" type="number" min="1" max="20" value="3"></label><label>Maximum output tokens<input id="benchmark-max-tokens" type="number" min="1" value="2048"></label></div>
+      <fieldset><legend>Task MCP servers</legend><div id="benchmark-mcp-picker" class="checkbox-grid"></div></fieldset>
+      <fieldset><legend>Model targets</legend><div id="benchmark-targets" class="target-list"></div><button type="button" class="secondary-button compact" id="add-benchmark-target">＋ Add model</button></fieldset>
+      <div class="form-grid grader-grid"><label>Required phrases<textarea id="benchmark-required-phrases" rows="3" placeholder="One phrase per line"></textarea></label><label>Forbidden phrases<textarea id="benchmark-forbidden-phrases" rows="3" placeholder="One phrase per line"></textarea></label></div>
+      <label>Required tools<textarea id="benchmark-required-tools" rows="2" placeholder="server_id.tool_name · one per line"></textarea></label>
+      <div class="dialog-actions"><span></span><span></span><button type="button" class="secondary-button" id="cancel-benchmark-dialog">Cancel</button><button type="submit" class="primary-button">Save benchmark</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

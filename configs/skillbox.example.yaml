@@ -1,7 +1,18 @@
 server:
   address: ":8081"
 
+skills:
+  directory: ./data/skills
+
 database:
   driver: sqlite # sqlite, mysql, postgres
   path: ./data/skillbox.db
   dsn: ""
+
+# Optional AI-assisted package review. Local endpoints do not require consent;
+# external endpoints require an explicit confirmation for every review in the UI.
+code_review:
+  provider: "" # openai-compatible
+  endpoint: "" # e.g. http://127.0.0.1:8080/v1
+  model: ""
+  api_key_env: "" # environment variable name; never expose the value to Dashboard

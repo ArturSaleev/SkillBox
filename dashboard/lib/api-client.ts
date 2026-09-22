@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
-import type { Execution, PreparedSkill, Project, SearchFilter, Skill, SkillInput, SkillProposal, Statistics, ValidationResult } from "@/lib/types";
+import type { CodeReviewConfig, Execution, ImportPreview, PreparedSkill, Project, SearchFilter, SecurityReview, Skill, SkillInput, SkillProposal, Statistics, ValidationResult } from "@/lib/types";
 
 interface RpcEnvelope<T> { jsonrpc: "2.0"; id: number; result?: T; error?: { code: number; message: string } }
 interface ToolResult<T> { content: Array<{ type: "text"; text: string }>; structuredContent: T; isError: boolean }
@@ -79,6 +79,21 @@ function normalizeSkill(skill: Skill): Skill {
 }
 
 export const api = {
+	exportURL: (skillId: string) => `${configuredBaseUrl}/admin/api/skills/${encodeURIComponent(skillId)}/export`,
+	async previewZIP(file: File): Promise<ImportPreview> {
+		const form = new FormData(); form.append("file", file);
+		const { data } = await adminClient.post<ImportPreview>("/imports/zip/preview", form);
+		return data;
+	},
+	async importZIP(file: File): Promise<void> {
+		const form = new FormData(); form.append("file", file);
+		await adminClient.post("/imports/zip", form);
+	},
+	async previewGit(url: string, revision: string): Promise<ImportPreview> {
+		const { data } = await adminClient.post<ImportPreview>("/imports/git/preview", { url, revision });
+		return data;
+	},
+	async importGit(url: string, revision: string): Promise<void> { await adminClient.post("/imports/git", { url, revision }); },
   async listProjects(): Promise<Project[]> {
     const { data } = await adminClient.get<{ projects: Project[] }>("/projects");
     return data.projects ?? [];
@@ -92,14 +107,12 @@ export const api = {
     return normalizeSkill(data);
   },
   async createSkill(skill: SkillInput): Promise<Skill> {
-    const { mcp_project: projectId, ...payload } = skill;
-    const created = await callTool<Skill>(projectId, "teacher", "create_skill_draft", payload as Record<string, unknown>);
-    return this.getSkill(created.id);
+    const { data } = await adminClient.post<Skill>("/skills", skill);
+    return normalizeSkill(data);
   },
-  async updateSkill(skill: SkillInput, changeSummary = "Updated from Dashboard"): Promise<Skill> {
-    const { mcp_project: projectId, ...payload } = skill;
-    const updated = await callTool<Skill>(projectId, "teacher", "update_skill_draft", { skill: payload, change_summary: changeSummary });
-    return this.getSkill(updated.id);
+  async updateSkill(skill: SkillInput): Promise<Skill> {
+    const { data } = await adminClient.put<Skill>(`/skills/${encodeURIComponent(skill.id ?? "")}`, skill);
+    return normalizeSkill(data);
   },
   validateSkill: (skill: Skill) => callTool<ValidationResult>(skill.mcp_project, "teacher", "validate_skill", { skill_id: skill.id }),
   prepareSkill: (skill: Skill) => callTool<PreparedSkill>(skill.mcp_project, "student", "prepare_skill", { task: "Dashboard preview", skill_id: skill.id, model: { provider: "dashboard", name: "preview", context_window: 32000 }, max_skill_tokens: 4000 }),
@@ -114,6 +127,17 @@ export const api = {
   async listProposals(skillId?: string): Promise<SkillProposal[]> {
     const { data } = await adminClient.get<{ proposals: SkillProposal[] }>("/proposals", { params: skillId ? { skill_id: skillId } : {} });
     return data.proposals ?? [];
+  },
+  async getCodeReviewConfig(): Promise<CodeReviewConfig> {
+    const { data } = await adminClient.get<CodeReviewConfig>("/code-review/config");
+    return data;
+  },
+  async listSecurityReviews(skillId: string): Promise<SecurityReview[]> {
+    const { data } = await adminClient.get<{ reviews: SecurityReview[] }>("/security-reviews", { params: { skill_id: skillId } });
+    return data.reviews ?? [];
+  },
+  async runSecurityReview(skillId: string, externalTransmissionApproved: boolean): Promise<void> {
+    await adminClient.post(`/skills/${encodeURIComponent(skillId)}/security-reviews`, { external_transmission_approved: externalTransmissionApproved });
   },
   createProposal: (skill: Skill, summary: string) => callTool<SkillProposal>(skill.mcp_project, "teacher", "create_skill_proposal", { skill_id: skill.id, summary }),
   approveProposal: (skill: Skill, proposalId: string) => callTool<SkillProposal>(skill.mcp_project, "teacher", "approve_skill_proposal", { proposal_id: proposalId, note: "Approved in Dashboard" }),

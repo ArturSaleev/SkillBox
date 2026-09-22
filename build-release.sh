@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DIST_DIR="${DIST_DIR:-$(cd "$ROOT_DIR/.." && pwd)/release}"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/release}"
 RELEASE_NAME="SkillBox"
 MODE="${1:-host}"
 
@@ -27,12 +27,15 @@ for target in $targets; do
   os="${target%/*}"
   arch="${target#*/}"
   bundle="$DIST_DIR/$os/$arch/$RELEASE_NAME"
-  mkdir -p "$bundle/configs" "$bundle/docs"
+  mkdir -p "$bundle/configs" "$bundle/docs" "$bundle/benchmark"
   binary="$RELEASE_NAME"
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags="-s -w" -o "$bundle/$binary" ./cmd/skillbox
+  GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags="-s -w" -o "$bundle/skillbox-bench" ./benchmark/cmd/skillbox-bench
   if [[ ! -f "$bundle/configs/skillbox.yaml" ]]; then
     cp configs/skillbox.example.yaml "$bundle/configs/skillbox.yaml"
   fi
+  cp benchmark/config.example.yaml "$bundle/benchmark/config.example.yaml"
+  cp benchmark/README.md "$bundle/benchmark/README.md"
   cp README.md "$bundle/README.md"
   cp docs/*.md "$bundle/docs/"
   echo "built $bundle"

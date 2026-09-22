@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 GOWORK=off go test ./... && \
 
 FROM alpine:3.22
 RUN addgroup -S skillbox && adduser -S -G skillbox skillbox && \
-    mkdir -p /app/configs /app/data && chown -R skillbox:skillbox /app
+    mkdir -p /app/configs /app/data/skills && chown -R skillbox:skillbox /app
 WORKDIR /app
 COPY --from=builder /out/skillbox /app/skillbox
 COPY configs/skillbox.example.yaml /app/configs/skillbox.yaml

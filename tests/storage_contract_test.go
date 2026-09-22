@@ -118,7 +118,7 @@ func TestSkillCollectionsAreNeverNil(t *testing.T) {
 
 func TestMigrationFilesStayMirrored(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql", "postgres"} {
-		for _, name := range []string{"001_initial.sql"} {
+		for _, name := range []string{"001_initial.sql", "002_skill_package_index.sql", "003_package_version_hash.sql"} {
 			source := fmt.Sprintf("../migrations/%s/%s", driver, name)
 			embedded := fmt.Sprintf("../internal/migrate/sql/%s_%s", driver, name)
 			a, err := os.ReadFile(source)
@@ -159,14 +159,20 @@ func TestFreshSQLiteSchemaOmitsMCPAccessTables(t *testing.T) {
 			t.Fatalf("obsolete table %s exists", table)
 		}
 	}
-	for _, table := range []string{"projects", "skills", "skill_versions", "skill_executions", "skill_proposals"} {
+	for _, table := range []string{"projects", "skills", "skill_versions", "skill_executions", "skill_proposals", "security_reviews"} {
 		var count int
 		if err = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("required table %s count=%d err=%v", table, count, err)
 		}
 	}
 	var migrations int
-	if err = db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil || migrations != 1 {
+	if err = db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil || migrations != 4 {
 		t.Fatalf("schema migrations=%d err=%v", migrations, err)
+	}
+	for _, column := range []string{"package_path", "package_hash", "package_indexed_at"} {
+		var count int
+		if err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('skills') WHERE name=?`, column).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("required skills column %s count=%d err=%v", column, count, err)
+		}
 	}
 }
